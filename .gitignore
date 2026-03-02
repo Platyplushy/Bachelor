@@ -1,0 +1,18 @@
+# Build folders
+Debug/
+Release/
+build/
+
+# STM32CubeIDE
+.settings/
+*.launch
+
+# Object / binary
+*.o
+*.d
+*.elf
+*.map
+*.lst
+
+# Logs
+*.log
