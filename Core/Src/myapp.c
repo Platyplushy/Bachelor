@@ -12,11 +12,13 @@
 #include "tim.h"
 #include "gpio.h"
 #include "stm32g4xx_nucleo.h"
+#include "blink_task.h"
 
 static COM_InitTypeDef BspCOMInit;
 
 void App_Init(void) {
     /* USER CODE BEGIN App_Init 1 */
+	BlinkTask_Init();
     /* USER CODE END App_Init 1 */
 
     /* PWM Initialisering */
