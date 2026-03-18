@@ -15,6 +15,11 @@
 void PWM_Init(void);
 
 /**
+ * @brief Konfigurerer TIM1 for 3-fase komplementaer PWM.
+ */
+void PWM_TIM1_Configure3PhaseComplementary(void);
+
+/**
  * @brief Starter PWM på de konfigurerte kanalene.
  */
 void PWM_Start(void);
@@ -39,6 +44,11 @@ void PWM_Set_DutyCycle(uint32_t channel, float duty);
  * @brief Setter duty cycle i prosent (0-100) for alle tre faser (TIM1).
  */
 void PWM_SetMotor1Duty(float duty);
+
+/**
+ * @brief Setter separate duty cycles i prosent (0-100) for TIM1 fase A/B/C.
+ */
+void PWM_SetMotor1PhaseDuties(float duty_a, float duty_b, float duty_c);
 
 /**
  * @brief Setter duty cycle i prosent (0-100) for alle tre faser (TIM8).

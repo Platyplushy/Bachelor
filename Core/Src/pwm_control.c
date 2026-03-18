@@ -82,6 +82,78 @@ void PWM_Init(void) {
     PWM_SetMotor2Duty(0.0f);
 }
 
+void PWM_TIM1_Configure3PhaseComplementary(void) {
+    TIM_OC_InitTypeDef sConfigOC = {0};
+    const uint32_t period = 4249U;
+    const uint32_t pulse = (period + 1U) / 2U;
+
+    HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
+    HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_3);
+    HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_1);
+    HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_2);
+    HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_3);
+
+    __HAL_TIM_DISABLE(&htim1);
+
+    htim1.Init.Prescaler = 0;
+    htim1.Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
+    htim1.Init.Period = period;
+    htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim1.Init.RepetitionCounter = 0;
+    htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+
+    if (HAL_TIM_PWM_Init(&htim1) != HAL_OK) {
+        Error_Handler();
+    }
+
+    sConfigOC.OCMode = TIM_OCMODE_PWM1;
+    sConfigOC.Pulse = pulse;
+    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+    sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+    sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+    sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+
+    if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3) != HAL_OK) {
+        Error_Handler();
+    }
+
+    PWM_ApplyDeadtime(&htim1, 400U);
+
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, pulse);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, pulse);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, pulse);
+    HAL_TIM_GenerateEvent(&htim1, TIM_EVENTSOURCE_UPDATE);
+
+    if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3) != HAL_OK) {
+        Error_Handler();
+    }
+
+    __HAL_TIM_MOE_ENABLE(&htim1);
+}
+
 /**
  * @brief Starter PWM på kanal 1 til 3 for TIM1.
  */
@@ -149,6 +221,12 @@ static void PWM_SetAllChannels(TIM_HandleTypeDef *htim, float duty) {
 
 void PWM_SetMotor1Duty(float duty) {
     PWM_SetAllChannels(&htim1, duty);
+}
+
+void PWM_SetMotor1PhaseDuties(float duty_a, float duty_b, float duty_c) {
+    PWM_Set_DutyCycle(TIM_CHANNEL_1, duty_a);
+    PWM_Set_DutyCycle(TIM_CHANNEL_2, duty_b);
+    PWM_Set_DutyCycle(TIM_CHANNEL_3, duty_c);
 }
 
 void PWM_SetMotor2Duty(float duty) {
