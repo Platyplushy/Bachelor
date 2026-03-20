@@ -6,6 +6,91 @@
 
 #include "pwm_control.h"
 
+#define PWM_TEST_STATE_COUNT            15U
+#define PWM_TEST_STEP_FREQUENCY_HZ      300000U
+#define PWM_TEST_TIM_PERIOD             ((170000000U / PWM_TEST_STEP_FREQUENCY_HZ) - 1U)
+#define PWM_TEST_HIGH_A_PIN             GPIO_PIN_8
+#define PWM_TEST_HIGH_B_PIN             GPIO_PIN_9
+#define PWM_TEST_HIGH_C_PIN             GPIO_PIN_10
+#define PWM_TEST_LOW_A_PIN              GPIO_PIN_13
+#define PWM_TEST_LOW_B_PIN              GPIO_PIN_14
+#define PWM_TEST_LOW_C_PIN              GPIO_PIN_15
+
+typedef struct {
+    GPIO_PinState high_a;
+    GPIO_PinState high_b;
+    GPIO_PinState high_c;
+} PWM_TestState;
+
+static const PWM_TestState kPwmTestStateTable[PWM_TEST_STATE_COUNT] = {
+    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
+    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
+    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
+    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
+    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
+    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
+    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
+    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
+    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
+    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
+    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET},
+    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET},
+    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET},
+    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET},
+    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET}
+};
+
+static volatile uint32_t s_pwmTestStateIndex = 0U;
+
+static void PWM_TestApplyHighSideState(uint32_t state_index) {
+    const PWM_TestState *state = &kPwmTestStateTable[state_index % PWM_TEST_STATE_COUNT];
+    uint32_t set_mask_a = 0U;
+    uint32_t reset_mask_a = PWM_TEST_HIGH_A_PIN | PWM_TEST_HIGH_B_PIN | PWM_TEST_HIGH_C_PIN;
+    uint32_t set_mask_b = 0U;
+    uint32_t reset_mask_b = PWM_TEST_LOW_A_PIN | PWM_TEST_LOW_B_PIN | PWM_TEST_LOW_C_PIN;
+
+    if (state->high_a == GPIO_PIN_SET) {
+        set_mask_a |= PWM_TEST_HIGH_A_PIN;
+    } else {
+        set_mask_b |= PWM_TEST_LOW_A_PIN;
+    }
+    if (state->high_b == GPIO_PIN_SET) {
+        set_mask_a |= PWM_TEST_HIGH_B_PIN;
+    } else {
+        set_mask_b |= PWM_TEST_LOW_B_PIN;
+    }
+    if (state->high_c == GPIO_PIN_SET) {
+        set_mask_a |= PWM_TEST_HIGH_C_PIN;
+    } else {
+        set_mask_b |= PWM_TEST_LOW_C_PIN;
+    }
+
+    GPIOA->BSRR = ((reset_mask_a & ~set_mask_a) << 16U) | set_mask_a;
+    GPIOB->BSRR = ((reset_mask_b & ~set_mask_b) << 16U) | set_mask_b;
+}
+
+static void PWM_TestConfigurePins(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+
+    HAL_GPIO_DeInit(GPIOA, PWM_TEST_HIGH_A_PIN | PWM_TEST_HIGH_B_PIN | PWM_TEST_HIGH_C_PIN);
+    HAL_GPIO_DeInit(GPIOB, PWM_TEST_LOW_A_PIN | PWM_TEST_LOW_B_PIN | PWM_TEST_LOW_C_PIN);
+
+    HAL_GPIO_WritePin(GPIOA, PWM_TEST_HIGH_A_PIN | PWM_TEST_HIGH_B_PIN | PWM_TEST_HIGH_C_PIN, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOB, PWM_TEST_LOW_A_PIN | PWM_TEST_LOW_B_PIN | PWM_TEST_LOW_C_PIN, GPIO_PIN_RESET);
+
+    GPIO_InitStruct.Pin = PWM_TEST_HIGH_A_PIN | PWM_TEST_HIGH_B_PIN | PWM_TEST_HIGH_C_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = PWM_TEST_LOW_A_PIN | PWM_TEST_LOW_B_PIN | PWM_TEST_LOW_C_PIN;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+}
+
 static uint32_t PWM_GetTimClockHz(void) {
     uint32_t pclk = HAL_RCC_GetPCLK2Freq();
     uint32_t ppre = (RCC->CFGR & RCC_CFGR_PPRE2) >> RCC_CFGR_PPRE2_Pos;
@@ -234,8 +319,6 @@ void PWM_SetMotor2Duty(float duty) {
 }
 
 void PWM_HardwareTest_3Phase(void) {
-    TIM_OC_InitTypeDef sConfigOC = {0};
-
     /* Stopp TIM1 før rekonfigurering */
     HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
     HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
@@ -243,40 +326,46 @@ void PWM_HardwareTest_3Phase(void) {
     HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_1);
     HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_2);
     HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_3);
+    HAL_TIM_Base_Stop_IT(&htim1);
+    __HAL_TIM_MOE_DISABLE(&htim1);
+    __HAL_TIM_DISABLE(&htim1);
+    __HAL_TIM_DISABLE_IT(&htim1, TIM_IT_UPDATE);
+    htim1.Instance->CCER = 0U;
+    htim1.Instance->CCMR1 = 0U;
+    htim1.Instance->CCMR2 = 0U;
+    htim1.Instance->CCMR3 = 0U;
 
-    /* Sett Deadtime til 1.0 us for sikkerhet under maskinvaretest */
-    PWM_ApplyDeadtime(&htim1, 1000U);
+    PWM_TestConfigurePins();
 
-    /* Konfigurer Fase A (0 grader): Høy mellom 0 og 4250 */
-    sConfigOC.OCMode = TIM_OCMODE_ASYMMETRIC_PWM2;
-    sConfigOC.Pulse = 0;       /* CCR1 */
-    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-    sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
-    sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
-    sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-    HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1);
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 4250); /* CCR2 definerer slutten */
+    htim1.Init.Prescaler = 0U;
+    htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim1.Init.Period = PWM_TEST_TIM_PERIOD;
+    htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim1.Init.RepetitionCounter = 0U;
+    htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
-    /* Konfigurer Fase B (120 grader): Høy mellom 2833 og 7083 */
-    sConfigOC.OCMode = TIM_OCMODE_ASYMMETRIC_PWM2;
-    sConfigOC.Pulse = 2833;    /* CCR3 */
-    HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, 7083); /* CCR4 definerer slutten */
+    if (HAL_TIM_Base_Init(&htim1) != HAL_OK) {
+        Error_Handler();
+    }
 
-    /* Konfigurer Fase C (240 grader): Høy når CNT < 1416 ELLER CNT > 5666 (Wrappet puls) */
-    sConfigOC.OCMode = TIM_OCMODE_ASYMMETRIC_PWM1;
-    sConfigOC.Pulse = 1416;    /* CCR5 */
-    HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_5);
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_6, 5666); /* CCR6 definerer starten */
+    HAL_NVIC_SetPriority(TIM1_UP_TIM16_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(TIM1_UP_TIM16_IRQn);
 
-    /* Start PWM med komplementære utganger */
-    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
-    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
-    HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
-    HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2);
-    HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);
+    s_pwmTestStateIndex = 0U;
+    PWM_TestApplyHighSideState(s_pwmTestStateIndex);
+    __HAL_TIM_SET_COUNTER(&htim1, 0U);
+    __HAL_TIM_CLEAR_FLAG(&htim1, TIM_FLAG_UPDATE);
 
-    /* Aktiver Main Output Enable (MOE) */
-    __HAL_TIM_MOE_ENABLE(&htim1);
+    if (HAL_TIM_Base_Start_IT(&htim1) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
+void PWM_TIM1_UpdateIRQHandler(void) {
+    if ((__HAL_TIM_GET_FLAG(&htim1, TIM_FLAG_UPDATE) != RESET) &&
+        (__HAL_TIM_GET_IT_SOURCE(&htim1, TIM_IT_UPDATE) != RESET)) {
+        __HAL_TIM_CLEAR_IT(&htim1, TIM_IT_UPDATE);
+        s_pwmTestStateIndex = (s_pwmTestStateIndex + 1U) % PWM_TEST_STATE_COUNT;
+        PWM_TestApplyHighSideState(s_pwmTestStateIndex);
+    }
 }

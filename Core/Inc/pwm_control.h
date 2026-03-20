@@ -61,4 +61,9 @@ void PWM_SetMotor2Duty(float duty);
  */
 void PWM_HardwareTest_3Phase(void);
 
+/**
+ * @brief Håndterer TIM1 update interrupt for 3-fase high-side maskinvaretest.
+ */
+void PWM_TIM1_UpdateIRQHandler(void);
+
 #endif /* INC_PWM_CONTROL_H_ */
