@@ -6,9 +6,12 @@
 
 #include "pwm_control.h"
 
-#define PWM_TEST_STATE_COUNT            15U
-#define PWM_TEST_STEP_FREQUENCY_HZ      300000U
-#define PWM_TEST_TIM_PERIOD             ((170000000U / PWM_TEST_STEP_FREQUENCY_HZ) - 1U)
+#define PWM_TEST_STATE_COUNT            6U
+/* Change only this value to adjust the 3-phase test output frequency. */
+#define PWM_TEST_OUTPUT_FREQUENCY_HZ    10U
+#define PWM_TEST_TIM_PRESCALER          44U
+#define PWM_TEST_STEP_FREQUENCY_HZ      (PWM_TEST_OUTPUT_FREQUENCY_HZ * PWM_TEST_STATE_COUNT)
+#define PWM_TEST_TIM_PERIOD             ((170000000U / ((PWM_TEST_TIM_PRESCALER + 1U) * PWM_TEST_STEP_FREQUENCY_HZ)) - 1U)
 #define PWM_TEST_HIGH_A_PIN             GPIO_PIN_8
 #define PWM_TEST_HIGH_B_PIN             GPIO_PIN_9
 #define PWM_TEST_HIGH_C_PIN             GPIO_PIN_10
@@ -24,20 +27,11 @@ typedef struct {
 
 static const PWM_TestState kPwmTestStateTable[PWM_TEST_STATE_COUNT] = {
     {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
-    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
-    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
-    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
-    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
+    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_RESET},
     {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
-    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
-    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
-    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
-    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
+    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_RESET},
     {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET},
-    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET},
-    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET},
-    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET},
-    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET}
+    {GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET}
 };
 
 static volatile uint32_t s_pwmTestStateIndex = 0U;
@@ -337,7 +331,7 @@ void PWM_HardwareTest_3Phase(void) {
 
     PWM_TestConfigurePins();
 
-    htim1.Init.Prescaler = 0U;
+    htim1.Init.Prescaler = PWM_TEST_TIM_PRESCALER;
     htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
     htim1.Init.Period = PWM_TEST_TIM_PERIOD;
     htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;

@@ -94,3 +94,47 @@ Alle fremtidige kodeendringer skal loggføres her med tidspunkt, filer, hva som 
 - **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
 - **What/Why:** Justerte den GPIO-baserte 3-fasetesten fra 80 % til 66,7 % duty. Ved 120 graders faseforskyvning gir 80 % wrap-around og oppdelte pulser; 66,7 % er høyeste sammenhengende duty med ren fasefølge i denne testen.
 - **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-03-20 12:33
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Gjenopprettet den GPIO-baserte 3-fasetesten til 50 % duty pÃ¥ alle faser. Testtabellen ble redusert fra 15 til 6 tilstander, og oppdateringsfrekvensen ble justert til 120 kHz slik at fasefÃ¸lgen fortsatt gir 20 kHz grunnfrekvens med 120 graders faseforskyvning.
+- **Build/Test result:** Ikke kjÃ¸rt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljÃ¸et.
+### Endring 2026-03-20 13:00
+- **Files changed:** Bachelor/Core/Inc/stm32g4xx_it.h, Bachelor/Core/Src/stm32g4xx_it.c, Bachelor/log.md
+- **What/Why:** Gjenopprettet `TIM1_UP_TIM16_IRQHandler()` for den GPIO-baserte 3-fasetesten. IRQ-prototypen og handleren ble lagt i CubeMX sine `USER CODE`-blokker slik at de ikke blir slettet ved neste regenerering etter endringer i `.ioc`.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-20 13:10
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Endret den GPIO-baserte 3-fasetesten fra 20 kHz til 2 kHz ved aa redusere testens step-frekvens fra 120 kHz til 12 kHz. `TIM1.Prescaler` i CubeMX hadde ikke effekt paa denne testen fordi `PWM_HardwareTest_3Phase()` rekonfigurerer TIM1 direkte ved runtime.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-20 13:15
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Endret den GPIO-baserte 3-fasetesten fra 2 kHz til 1.2 kHz ved aa redusere testens step-frekvens fra 12 kHz til 7.2 kHz. Med 6 tilstander per elektrisk periode gir dette 1.2 kHz grunnfrekvens.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-20 13:22
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Justerte kun fase C i den GPIO-baserte 3-fasetesten. C high-side var komplementaer til fase B (`110001` mot `001110`) i stedet for aa vaere 120 grader forskjoevet. Sekvensen for C ble endret til `100011` slik at A og B beholdes uendret mens C foelger samme 50 % boelgeform med riktig faseforskyvning.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-20 13:27
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Endret kun frekvensen i den GPIO-baserte 3-fasetesten fra 1.2 kHz til 800 Hz. Step-frekvensen ble redusert fra 7.2 kHz til 4.8 kHz, mens fasesekvens og duty cycle ble beholdt uendret.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-20 13:30
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Endret kun frekvensen i den GPIO-baserte 3-fasetesten fra 800 Hz til 10 Hz. Step-frekvensen ble redusert fra 4.8 kHz til 60 Hz, mens duty cycle og faseforskyvning ble beholdt uendret.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-20 13:36
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Rettet 10 Hz-oppsettet for den GPIO-baserte 3-fasetesten. Aarsaken til at 10 Hz ga ca. 1.8 kHz var at TIM1 er 16-bit, mens forrige oppsett lot `ARR` bli for stor med `Prescaler=0`. La til en egen test-prescaler (`PSC=44`) og beholdt step-frekvensen paa 60 Hz, som gir reell 10 Hz grunnfrekvens med uendret duty cycle og faseforskyvning.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-20 13:40
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Endret den GPIO-baserte 3-fasetesten tilbake til 800 Hz. Step-frekvensen ble satt til 4.8 kHz, og test-prescaleren ble satt tilbake til `0` siden denne frekvensen passer innen 16-bit timerperioden uten ekstra preskalering. Duty cycle og faseforskyvning ble beholdt uendret.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-20 13:42
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Endret kun frekvensen i den GPIO-baserte 3-fasetesten fra 800 Hz til 100 Hz. Step-frekvensen ble redusert fra 4.8 kHz til 600 Hz, mens duty cycle, fasesekvens og faseforskyvning ble beholdt uendret.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-20 13:47
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Forenklet frekvensoppsettet i den GPIO-baserte 3-fasetesten slik at frekvensen naa styres av én konstant: `PWM_TEST_OUTPUT_FREQUENCY_HZ`. Step-frekvensen beregnes automatisk fra antall testtilstander, og en fast test-prescaler brukes for aa unngaa 16-bit begrensningen ved lave frekvenser.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
