@@ -118,6 +118,10 @@ Alle fremtidige kodeendringer skal loggføres her med tidspunkt, filer, hva som 
 - **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
 - **What/Why:** Reverterte TIM1-kommuterings-PWM fra `1 kHz` tilbake til `20 kHz` etter test uten endring i motoroppforsel. Hensikten er aa holde switchingfrekvensen tilbake paa opprinnelig nivaa og heller fokusere videre feilsoking paa kommuteringstabell, sektoroffset og fasekobling.
 - **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 23
+- **Files changed:** Bachelor/flytskjema.md, Bachelor/log.md
+- **What/Why:** Opprettet et arbeidsdokument med flytskjema for dagens kontrollflyt i prosjektet. Dokumentet kobler sammen `main`, FreeRTOS-tasken, hall-filtrering, kommutering og relevante debugspor, og oppsummerer hva `hall_log.md.txt` antyder om neste steg i feilsokingen.
+- **Build/Test result:** Ikke kjort. Dokumentasjonsendring.
 ### Endring 2026-03-23 18
 - **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
 - **What/Why:** Gjorde fase-mappingen i kommuteringsmodulen eksplisitt og byttet fra antatt `U=CH1, V=CH2, W=CH3` til testmapping `U=CH3, V=CH2, W=CH1`. Dette er neste naturlige tuning-steg naar endring av kommuteringsretning alene ikke ga synlig effekt, og hypotesen er at fasekoblingen mellom `U/V/W` og TIM1-kanalene ikke stemte med motorens faktiske ledningsrekkefolge.
@@ -234,3 +238,15 @@ Alle fremtidige kodeendringer skal loggføres her med tidspunkt, filer, hva som 
 - **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
 - **What/Why:** Gjorde den systematiske kommuteringstestingen eksplisitt i kode ved aa samle alle seks fase-permutasjonene (`UVW->CH321`, `CH132`, `CH123`, `CH312`, `CH231`, `CH213`) i en tabell og styre valgt kandidat med `MOTOR_COMMUTATION_PHASE_MAP`. `MOTOR_COMMUTATION_SECTOR_OFFSET` beholdes som separat testparameter `0..5`. UART viser naa aktiv konfigurasjon (`cfg`) og offset i baade oppstart og `COMM`-prints, slik at hver iterasjon kan testes og dokumenteres uten tvetydighet.
 - **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 24
+- **Files changed:** Bachelor/flytskjema.md, Bachelor/log.md
+- **What/Why:** Oppdaterte arbeidsdokumentet for videre systemdesign. Flytskjemaet beskriver naa ønsket retning med IRQ-basert Hall-lesing som primærflyt, polling-basert Hall som feilsøkingsspor, joystick-polling hver `50 ms`, og display-oppdatering for hastighet og batteri/ladning. Mermaid-flyten ble erstattet med mer SDL-lignende tekstlige prosessbeskrivelser som er enklere å videreutvikle som spesifikasjon.
+- **Build/Test result:** Ikke kjort. Dokumentasjonsendring.
+### Endring 2026-03-23 25
+- **Files changed:** Bachelor/flytskjema.md, Bachelor/log.md
+- **What/Why:** La til dødmansknapp som eksplisitt sikkerhetskrav i systembeskrivelsen. Dokumentet beskriver nå at motoren bare kan være aktiv når dødmansknappen holdes inne, samt egen SDL-flyt for arming, release og umiddelbar sikker stopp.
+- **Build/Test result:** Ikke kjort. Dokumentasjonsendring.
+### Endring 2026-03-23 26
+- **Files changed:** Bachelor/flytskjema.md, Bachelor/log.md
+- **What/Why:** La til en første tegnet flytskjema-skisse i dokumentet med ASCII-bokser og piler. Skissen viser oppstart, runtime, hall/kommutering, joystick, dødmansknapp, display og batteri i en mer visuell form som kan videreutvikles sammen.
+- **Build/Test result:** Ikke kjort. Dokumentasjonsendring.
