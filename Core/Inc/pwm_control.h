@@ -7,7 +7,15 @@
 #ifndef INC_PWM_CONTROL_H_
 #define INC_PWM_CONTROL_H_
 
+#include <stdint.h>
+
 #include "tim.h"
+
+typedef enum {
+    PWM_PHASE_STATE_FLOAT = 0,
+    PWM_PHASE_STATE_HIGH,
+    PWM_PHASE_STATE_LOW
+} PWM_PhaseState;
 
 /**
  * @brief Initialiserer PWM-parametre (dead-time, 0% duty).
@@ -54,12 +62,21 @@ void PWM_SetMotor1PhaseDuties(float duty_a, float duty_b, float duty_c);
  * @brief Setter duty cycle i prosent (0-100) for alle tre faser (TIM8).
  */
 void PWM_SetMotor2Duty(float duty);
+void PWM_TIM1_SetPhaseState(uint32_t channel, PWM_PhaseState state, float duty);
+void PWM_TIM1_SetPhaseStates(PWM_PhaseState state_u,
+                             PWM_PhaseState state_v,
+                             PWM_PhaseState state_w,
+                             float duty);
 
 /**
  * @brief Kjører en maskinvaretest av gatedrivere (20kHz, 50% duty, 120 graders faseforskyvning).
  *        OBS: Dette er kun for maskinvareverifikasjon!
  */
 void PWM_HardwareTest_3Phase(void);
+void PWM_HardwareTest_SetOutputFrequency(uint32_t frequency_hz);
+void PWM_HardwareTest_SoftStart(uint32_t start_frequency_hz,
+                                uint32_t target_frequency_hz,
+                                uint32_t step_delay_ms);
 
 /**
  * @brief Håndterer TIM1 update interrupt for 3-fase high-side maskinvaretest.

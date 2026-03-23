@@ -6,6 +6,11 @@
  */
 
 #include "myapp.h"
+#include "hall_debug.h"
+#include "hall_probe.h"
+#include "hall_state_filter.h"
+#include "motor_commutation.h"
+#include "myprint.h"
 #include "pwm_control.h"
 #include "adc.h"
 #include "dma.h"
@@ -18,15 +23,12 @@ static COM_InitTypeDef BspCOMInit;
 
 void App_Init(void) {
     /* USER CODE BEGIN App_Init 1 */
-	BlinkTask_Init();
     /* USER CODE END App_Init 1 */
 
     /* PWM Initialisering */
     PWM_Init();
     
     /* KJØR MASKINVARETEST: 20kHz, 50% duty, 120 graders faseforskyvning */
-    PWM_HardwareTest_3Phase();
-
     /* BSP (Board Support Package) Initialisering */
     BSP_LED_Init(LED_GREEN);
     BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
@@ -41,8 +43,18 @@ void App_Init(void) {
         Error_Handler();
     }
 
+    MyPrint_Init();
+    HallDebug_Init();
+    HallProbe_Init();
+    HallStateFilter_Init();
+    MotorCommutation_Init();
+
     /* USER CODE BEGIN App_Init 2 */
     /* USER CODE END App_Init 2 */
+}
+
+void App_StartTasks(void) {
+    BlinkTask_Init();
 }
 
 void App_Run(void) {

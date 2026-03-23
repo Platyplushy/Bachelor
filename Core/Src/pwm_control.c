@@ -6,18 +6,18 @@
 
 #include "pwm_control.h"
 
-#define PWM_TEST_STATE_COUNT            6U
-/* Change only this value to adjust the 3-phase test output frequency. */
-#define PWM_TEST_OUTPUT_FREQUENCY_HZ    10U
-#define PWM_TEST_TIM_PRESCALER          44U
-#define PWM_TEST_STEP_FREQUENCY_HZ      (PWM_TEST_OUTPUT_FREQUENCY_HZ * PWM_TEST_STATE_COUNT)
-#define PWM_TEST_TIM_PERIOD             ((170000000U / ((PWM_TEST_TIM_PRESCALER + 1U) * PWM_TEST_STEP_FREQUENCY_HZ)) - 1U)
-#define PWM_TEST_HIGH_A_PIN             GPIO_PIN_8
-#define PWM_TEST_HIGH_B_PIN             GPIO_PIN_9
-#define PWM_TEST_HIGH_C_PIN             GPIO_PIN_10
-#define PWM_TEST_LOW_A_PIN              GPIO_PIN_13
-#define PWM_TEST_LOW_B_PIN              GPIO_PIN_14
-#define PWM_TEST_LOW_C_PIN              GPIO_PIN_15
+#define PWM_TEST_STATE_COUNT                 12U
+#define PWM_TEST_DEFAULT_OUTPUT_FREQUENCY_HZ 1000U
+#define PWM_TEST_MAX_OUTPUT_FREQUENCY_HZ     20000U
+#define PWM_TEST_TIM_PRESCALER               44U
+#define PWM_TIM1_COMMUTATION_PRESCALER       0U
+#define PWM_TIM1_COMMUTATION_PERIOD          4249U
+#define PWM_TEST_HIGH_A_PIN                  GPIO_PIN_8
+#define PWM_TEST_HIGH_B_PIN                  GPIO_PIN_9
+#define PWM_TEST_HIGH_C_PIN                  GPIO_PIN_10
+#define PWM_TEST_LOW_A_PIN                   GPIO_PIN_13
+#define PWM_TEST_LOW_B_PIN                   GPIO_PIN_14
+#define PWM_TEST_LOW_C_PIN                   GPIO_PIN_15
 
 typedef struct {
     GPIO_PinState high_a;
@@ -26,15 +26,23 @@ typedef struct {
 } PWM_TestState;
 
 static const PWM_TestState kPwmTestStateTable[PWM_TEST_STATE_COUNT] = {
-    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_SET},
     {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_RESET},
-    {GPIO_PIN_SET,   GPIO_PIN_SET,   GPIO_PIN_RESET},
+    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_RESET},
+    {GPIO_PIN_SET,   GPIO_PIN_RESET, GPIO_PIN_RESET},
+    {GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET},
     {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_RESET},
-    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_SET},
-    {GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET}
+    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_RESET},
+    {GPIO_PIN_RESET, GPIO_PIN_SET,   GPIO_PIN_RESET},
+    {GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET},
+    {GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET},
+    {GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET},
+    {GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET},
+    {GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET}
 };
 
 static volatile uint32_t s_pwmTestStateIndex = 0U;
+static volatile uint32_t s_pwmTestOutputFrequencyHz = PWM_TEST_DEFAULT_OUTPUT_FREQUENCY_HZ;
+static uint8_t s_tim1ChannelEnabled[3] = {0U, 0U, 0U};
 
 static void PWM_TestApplyHighSideState(uint32_t state_index) {
     const PWM_TestState *state = &kPwmTestStateTable[state_index % PWM_TEST_STATE_COUNT];
@@ -94,6 +102,77 @@ static uint32_t PWM_GetTimClockHz(void) {
     }
 
     return pclk;
+}
+
+static uint8_t PWM_TIM1_GetChannelIndex(uint32_t channel) {
+    switch (channel) {
+        case TIM_CHANNEL_1:
+            return 0U;
+        case TIM_CHANNEL_2:
+            return 1U;
+        case TIM_CHANNEL_3:
+            return 2U;
+        default:
+            Error_Handler();
+            return 0U;
+    }
+}
+
+static void PWM_TIM1_EnableChannelPair(uint32_t channel) {
+    uint8_t channel_index = PWM_TIM1_GetChannelIndex(channel);
+
+    if (s_tim1ChannelEnabled[channel_index] != 0U) {
+        return;
+    }
+
+    if (HAL_TIM_PWM_Start(&htim1, channel) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIMEx_PWMN_Start(&htim1, channel) != HAL_OK) {
+        Error_Handler();
+    }
+
+    s_tim1ChannelEnabled[channel_index] = 1U;
+}
+
+static void PWM_TIM1_DisableChannelPair(uint32_t channel) {
+    uint8_t channel_index = PWM_TIM1_GetChannelIndex(channel);
+
+    if (s_tim1ChannelEnabled[channel_index] == 0U) {
+        return;
+    }
+
+    if (HAL_TIM_PWM_Stop(&htim1, channel) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIMEx_PWMN_Stop(&htim1, channel) != HAL_OK) {
+        Error_Handler();
+    }
+
+    s_tim1ChannelEnabled[channel_index] = 0U;
+}
+
+static uint32_t PWM_TestComputePeriod(uint32_t output_frequency_hz) {
+    uint32_t step_frequency_hz;
+    uint32_t timer_clock_hz;
+    uint32_t period;
+
+    if (output_frequency_hz == 0U) {
+        output_frequency_hz = 1U;
+    }
+    if (output_frequency_hz > PWM_TEST_MAX_OUTPUT_FREQUENCY_HZ) {
+        output_frequency_hz = PWM_TEST_MAX_OUTPUT_FREQUENCY_HZ;
+    }
+
+    step_frequency_hz = output_frequency_hz * PWM_TEST_STATE_COUNT;
+    timer_clock_hz = PWM_GetTimClockHz();
+    period = (timer_clock_hz / ((PWM_TEST_TIM_PRESCALER + 1U) * step_frequency_hz)) - 1U;
+
+    if (period == 0U) {
+        period = 1U;
+    }
+
+    return period;
 }
 
 static uint8_t PWM_ComputeDeadtimeDTG(uint32_t deadtime_ns, uint32_t tim_clk_hz) {
@@ -163,7 +242,7 @@ void PWM_Init(void) {
 
 void PWM_TIM1_Configure3PhaseComplementary(void) {
     TIM_OC_InitTypeDef sConfigOC = {0};
-    const uint32_t period = 4249U;
+    const uint32_t period = PWM_TIM1_COMMUTATION_PERIOD;
     const uint32_t pulse = (period + 1U) / 2U;
 
     HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
@@ -175,7 +254,7 @@ void PWM_TIM1_Configure3PhaseComplementary(void) {
 
     __HAL_TIM_DISABLE(&htim1);
 
-    htim1.Init.Prescaler = 0;
+    htim1.Init.Prescaler = PWM_TIM1_COMMUTATION_PRESCALER;
     htim1.Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
     htim1.Init.Period = period;
     htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -229,6 +308,10 @@ void PWM_TIM1_Configure3PhaseComplementary(void) {
     if (HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3) != HAL_OK) {
         Error_Handler();
     }
+
+    s_tim1ChannelEnabled[0] = 1U;
+    s_tim1ChannelEnabled[1] = 1U;
+    s_tim1ChannelEnabled[2] = 1U;
 
     __HAL_TIM_MOE_ENABLE(&htim1);
 }
@@ -312,6 +395,40 @@ void PWM_SetMotor2Duty(float duty) {
     PWM_SetAllChannels(&htim8, duty);
 }
 
+void PWM_TIM1_SetPhaseState(uint32_t channel, PWM_PhaseState state, float duty) {
+    switch (state) {
+        case PWM_PHASE_STATE_FLOAT:
+            __HAL_TIM_SET_COMPARE(&htim1, channel, 0U);
+            PWM_TIM1_DisableChannelPair(channel);
+            break;
+
+        case PWM_PHASE_STATE_HIGH:
+            PWM_Set_DutyCycle(channel, duty);
+            PWM_TIM1_EnableChannelPair(channel);
+            break;
+
+        case PWM_PHASE_STATE_LOW:
+            __HAL_TIM_SET_COMPARE(&htim1, channel, 0U);
+            PWM_TIM1_EnableChannelPair(channel);
+            break;
+
+        default:
+            Error_Handler();
+            break;
+    }
+
+    __HAL_TIM_MOE_ENABLE(&htim1);
+}
+
+void PWM_TIM1_SetPhaseStates(PWM_PhaseState state_u,
+                             PWM_PhaseState state_v,
+                             PWM_PhaseState state_w,
+                             float duty) {
+    PWM_TIM1_SetPhaseState(TIM_CHANNEL_1, state_u, duty);
+    PWM_TIM1_SetPhaseState(TIM_CHANNEL_2, state_v, duty);
+    PWM_TIM1_SetPhaseState(TIM_CHANNEL_3, state_w, duty);
+}
+
 void PWM_HardwareTest_3Phase(void) {
     /* Stopp TIM1 før rekonfigurering */
     HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
@@ -333,7 +450,7 @@ void PWM_HardwareTest_3Phase(void) {
 
     htim1.Init.Prescaler = PWM_TEST_TIM_PRESCALER;
     htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim1.Init.Period = PWM_TEST_TIM_PERIOD;
+    htim1.Init.Period = PWM_TestComputePeriod(s_pwmTestOutputFrequencyHz);
     htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
     htim1.Init.RepetitionCounter = 0U;
     htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -352,6 +469,60 @@ void PWM_HardwareTest_3Phase(void) {
 
     if (HAL_TIM_Base_Start_IT(&htim1) != HAL_OK) {
         Error_Handler();
+    }
+}
+
+void PWM_HardwareTest_SetOutputFrequency(uint32_t frequency_hz) {
+    uint32_t period = PWM_TestComputePeriod(frequency_hz);
+
+    if (frequency_hz == 0U) {
+        frequency_hz = 1U;
+    }
+    if (frequency_hz > PWM_TEST_MAX_OUTPUT_FREQUENCY_HZ) {
+        frequency_hz = PWM_TEST_MAX_OUTPUT_FREQUENCY_HZ;
+    }
+
+    s_pwmTestOutputFrequencyHz = frequency_hz;
+
+    __HAL_TIM_DISABLE_IT(&htim1, TIM_IT_UPDATE);
+    __HAL_TIM_DISABLE(&htim1);
+    __HAL_TIM_SET_AUTORELOAD(&htim1, period);
+    __HAL_TIM_SET_COUNTER(&htim1, 0U);
+    __HAL_TIM_CLEAR_FLAG(&htim1, TIM_FLAG_UPDATE);
+    __HAL_TIM_ENABLE(&htim1);
+    __HAL_TIM_ENABLE_IT(&htim1, TIM_IT_UPDATE);
+}
+
+void PWM_HardwareTest_SoftStart(uint32_t start_frequency_hz,
+                                uint32_t target_frequency_hz,
+                                uint32_t step_delay_ms) {
+    uint32_t frequency_hz = start_frequency_hz;
+
+    if (start_frequency_hz == 0U) {
+        frequency_hz = 1U;
+    }
+    if (target_frequency_hz < frequency_hz) {
+        target_frequency_hz = frequency_hz;
+    }
+    if (target_frequency_hz > PWM_TEST_MAX_OUTPUT_FREQUENCY_HZ) {
+        target_frequency_hz = PWM_TEST_MAX_OUTPUT_FREQUENCY_HZ;
+    }
+
+    PWM_HardwareTest_SetOutputFrequency(frequency_hz);
+
+    while (frequency_hz < target_frequency_hz) {
+        uint32_t next_frequency_hz = frequency_hz + (frequency_hz / 10U);
+
+        if (next_frequency_hz <= frequency_hz) {
+            next_frequency_hz = frequency_hz + 1U;
+        }
+        if (next_frequency_hz > target_frequency_hz) {
+            next_frequency_hz = target_frequency_hz;
+        }
+
+        HAL_Delay(step_delay_ms);
+        PWM_HardwareTest_SetOutputFrequency(next_frequency_hz);
+        frequency_hz = next_frequency_hz;
     }
 }
 

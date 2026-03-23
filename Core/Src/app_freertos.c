@@ -25,6 +25,13 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "hall_debug.h"
+#include "hall_probe.h"
+#include "hall_state_filter.h"
+#include "motor_commutation.h"
+#include "myapp.h"
+#include "myprint.h"
+#include "pwm_control.h"
 
 /* USER CODE END Includes */
 
@@ -35,6 +42,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define MOTOR_CONTROL_ENABLE_RAW_HALL_DEBUG 0U
+#define MOTOR_CONTROL_LOOP_DELAY_MS         1U
 
 /* USER CODE END PD */
 
@@ -52,12 +61,11 @@ osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .priority = (osPriority_t) osPriorityNormal,
-  .stack_size = 128 * 4
+  .stack_size = 512 * 4
 };
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
@@ -71,6 +79,7 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
   */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
+  App_StartTasks();
 
   /* USER CODE END Init */
 
@@ -114,10 +123,28 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
+  uint32_t last_status_tick = osKernelGetTickCount();
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    MyPrint_ProcessTerminal();
+
+#if MOTOR_CONTROL_ENABLE_RAW_HALL_DEBUG
+    HallDebug_Process();
+    HallProbe_Process();
+#endif
+
+    HallStateFilter_Process();
+    MotorCommutation_Process();
+
+    if ((osKernelGetTickCount() - last_status_tick) >= 1000U)
+    {
+      last_status_tick = osKernelGetTickCount();
+      MyPrint_Print("UART alive: RX=PA3 TX=PA2\r\n");
+    }
+
+    osDelay(MOTOR_CONTROL_LOOP_DELAY_MS);
   }
   /* USER CODE END StartDefaultTask */
 }

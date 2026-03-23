@@ -19,10 +19,12 @@ All firmware agents must follow this mapping when generating code.
 
 | Signal   | Pin | Port  |
 | -------- | --- | ----- |
-| HALL_1_A | PC0 | GPIOC |
+| HALL_1_A | PC9 | GPIOC |
 | HALL_1_B | PC1 | GPIOC |
+| HALL_1_C | PC7 | GPIOC |
 | HALL_2_A | PC2 | GPIOC |
 | HALL_2_B | PC3 | GPIOC |
+| HALL_2_C | PC8 | GPIOC |
 
 | Signal     | ADC Function | Pin | Port  |
 | ---------- | ------------ | --- | ----- |

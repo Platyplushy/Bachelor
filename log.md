@@ -102,6 +102,98 @@ Alle fremtidige kodeendringer skal loggføres her med tidspunkt, filer, hva som 
 - **Files changed:** Bachelor/Core/Inc/stm32g4xx_it.h, Bachelor/Core/Src/stm32g4xx_it.c, Bachelor/log.md
 - **What/Why:** Gjenopprettet `TIM1_UP_TIM16_IRQHandler()` for den GPIO-baserte 3-fasetesten. IRQ-prototypen og handleren ble lagt i CubeMX sine `USER CODE`-blokker slik at de ikke blir slettet ved neste regenerering etter endringer i `.ioc`.
 - **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 19
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Gjorde sektorforskyvningen i kommuteringen eksplisitt med `MOTOR_COMMUTATION_SECTOR_OFFSET`, og satte ny testkandidat til `0`. UART-debug viser naa baade filtrert hall-sektor og kommando-sektor (`hall`/`cmd`) slik at videre tuning av kommuteringstabellen kan gjores systematisk. Hypotesen er at motoren laaser i neste steg fordi elektrisk kommuteringssektor ligger feil relativt til rotorposisjonen, ikke fordi hall-filteret stopper.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 20
+- **Files changed:** Bachelor/Core/Src/app_freertos.c, Bachelor/Core/Src/hall_state_filter.c, Bachelor/log.md
+- **What/Why:** Rettet timing rundt hall-basert kommutering. `defaultTask` kjorte tidligere bare hver `10 ms`, mens hall-filteret krevde `3` stabile samples, som i praksis betydde rundt `30 ms` stabil hall-kode før ny sektor ble godtatt. Det er for tregt og forklarer godt hvorfor motoren bare rykker eller laaser. Kontroellsløyfen kjores naa hver `1 ms`, ra `hall_debug`/`hall_probe` er skrudd av under motorstyring for aa unngaa UART-flom, og hall-filteret er justert til `1 ms` sampleperiode og `2` stabile samples.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 21
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Satt TIM1-kommuterings-PWM til `1 kHz` for testing av mykere/lavere switchingfrekvens under hall-basert motorstyring. Dette krevde baade ny periode og ny prescaler i `PWM_TIM1_Configure3PhaseComplementary()`, siden `1 kHz` med center-aligned PWM ikke faar plass i en 16-bit timer med `PSC=0`.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 22
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Reverterte TIM1-kommuterings-PWM fra `1 kHz` tilbake til `20 kHz` etter test uten endring i motoroppforsel. Hensikten er aa holde switchingfrekvensen tilbake paa opprinnelig nivaa og heller fokusere videre feilsoking paa kommuteringstabell, sektoroffset og fasekobling.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 18
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Gjorde fase-mappingen i kommuteringsmodulen eksplisitt og byttet fra antatt `U=CH1, V=CH2, W=CH3` til testmapping `U=CH3, V=CH2, W=CH1`. Dette er neste naturlige tuning-steg naar endring av kommuteringsretning alene ikke ga synlig effekt, og hypotesen er at fasekoblingen mellom `U/V/W` og TIM1-kanalene ikke stemte med motorens faktiske ledningsrekkefolge.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 17
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Justerte kommuteringen slik at den bruker nabosektor i motsatt retning i forhold til filtrert hall-sektor. Dette er et vanlig neste steg naar motoren rykker og prover aa gaa feil vei, fordi statorfeltet da sannsynligvis laa paa feil side av rotorposisjonen. Retningsvalget er samlet i `MOTOR_COMMUTATION_REVERSED_DIRECTION` for enkel videre tuning.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 16
+- **Files changed:** Bachelor/Core/Inc/pwm_control.h, Bachelor/Core/Src/pwm_control.c, Bachelor/Core/Inc/motor_commutation.h, Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** La til en egen `motor_commutation`-modul og utvidet PWM-laget slik at hver TIM1-fase kan settes til `HIGH`, `LOW` eller `FLOAT`. Kommuteringstabellen bruker filtrert hall-sektor `1..6` og anvender en 6-step sekvens paa `U/V/W`, med forelopig mapping `U->TIM1_CH1`, `V->TIM1_CH2`, `W->TIM1_CH3`. Modulen holder duty separat og skriver ut valgt kommuteringstilstand via UART for verifikasjon. `defaultTask`-stacken er fortsatt `512 * 4` bytes fordi hall-filter og kommuteringsdebug bruker mer stack enn standardoppsettet.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 15
+- **Files changed:** Bachelor/Core/Inc/hall_state_filter.h, Bachelor/Core/Src/hall_state_filter.c, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** La til en egen `hall_state_filter`-modul som leser Hall 1 som `U=HALL_1_C`, `V=HALL_1_B`, `W=HALL_1_A`, filtrerer bort ugyldige koder (`000`/`111`), krever stabilitet over flere samples, og bare godtar gyldige nabotransisjoner i 6-stegssekvensen. Modulen skriver ut akseptert sektor `1..6` og ren `UVW`-kode, og er ment som mellomledd før kommuteringstabellen kobles på motorstyringen.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 14
+- **Files changed:** Bachelor/pins.md, Bachelor/Core/Src/hall_debug.c, Bachelor/Core/Src/hall_probe.c, Bachelor/Core/Inc/stm32g4xx_it.h, Bachelor/Core/Src/stm32g4xx_it.c, Bachelor/Core/Src/gpio.c, Bachelor/log.md
+- **What/Why:** Flyttet `HALL_1_A` fra `PC0` til `PC9` i dokumentasjon og hall-debug/probe-koden. La ogsaa til `EXTI9_5_IRQHandler()` og NVIC-enable for `EXTI9_5_IRQn`, slik at `PC9` faktisk kan trigge interrupt sammen med `PC7/PC8`.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 13
+- **Files changed:** Bachelor/Core/Inc/hall_probe.h, Bachelor/Core/Src/hall_probe.c, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** La til en egen `hall_probe`-modul som pollet leser `HALL_1_A/B/C` paa `PC0/PC1/PC7` hvert `50 ms` og skriver ut ved nivaaendring. Dette brukes for aa skille mellom et reelt EXTI-problem og et pin-/wiringproblem paa `PC0`, siden `Hall 1 A` fortsatt ikke ga interrupts selv etter bytte av sensor.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 12
+- **Files changed:** Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** Oekte stack-storrelsen til `defaultTask` fra `128 * 4` til `512 * 4` bytes. Hall-debugen bruker `MyPrint_Printf()`/`vsnprintf()` i task-kontekst, og den opprinnelige stacken var sannsynligvis for liten naar mange hall-events og UART-prints kom tett ved oppstart.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 11
+- **Files changed:** Bachelor/Core/Src/hall_debug.c, Bachelor/log.md
+- **What/Why:** Fjernet runtime-rekonfigureringen av Hall-pinnene i `hall_debug`. Modulen leser fortsatt snapshots ved EXTI, men overstyrer ikke lenger `gpio.c` sin oppsettsekvens ved oppstart. Dette ble gjort fordi den nye pin-rekonfigureringen sannsynligvis gjorde oppstarten ustabil i praksis.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 10
+- **Files changed:** Bachelor/Core/Src/hall_debug.c, Bachelor/log.md
+- **What/Why:** Forbedret hall-debug for motor 1 ved aa la `hall_debug`-modulen re-konfigurere Hall 1-pinnene med `GPIO_PULLUP` og `GPIO_MODE_IT_RISING_FALLING`. I tillegg tas snapshot av `H1_A/B/C` idet EXTI inntreffer, slik at UART-print viser faktisk pinntilstand ved interrupt i stedet for et senere task-les. Dette skal gi mer paalitelige observasjoner, spesielt for `HALL_1_A`.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 9
+- **Files changed:** Bachelor/Core/Src/hall_debug.c, Bachelor/log.md
+- **What/Why:** Deaktiverte Hall 2-debug i `hall_debug`-modulen mens bare motor 1 er koblet opp. Dette hindrer UART-prints fra ikke-tilkoblet/flytende `PC2/PC3/PC8` i aa forstyrre testing av `HALL_1_A/B/C`. Hall 2 kan aktiveres igjen senere ved aa sette `HALL_DEBUG_ENABLE_MOTOR2` til `1`.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 8
+- **Files changed:** Bachelor/Core/Inc/hall_debug.h, Bachelor/Core/Src/hall_debug.c, Bachelor/Core/Inc/myapp.h, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** Flyttet hall-debuglogikken ut av `myapp.c` og inn i en egen `hall_debug`-modul. `myapp` er naa tilbake til aa vaere hovedsakelig init/orchestrering, mens EXTI-callback, eventflagg og UART-debug for hall-signaler ligger samlet i nye filer. De eksisterende systemfilene beholdes bare som tynne hook-punkter der det er nodvendig.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 7
+- **Files changed:** Bachelor/pins.md, Bachelor/Core/Inc/myapp.h, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/Core/Inc/stm32g4xx_it.h, Bachelor/Core/Src/stm32g4xx_it.c, Bachelor/Core/Src/gpio.c, Bachelor/log.md
+- **What/Why:** Oppdatert pindokumentasjonen med `HALL_1_C = PC7` og `HALL_2_C = PC8`. La til `EXTI9_5_IRQHandler()` og NVIC-enable for `PC7/PC8`, samt debugflyt for hall-signaler: EXTI-callbacken setter eventflagg, og `defaultTask` skriver ut hvilken hall-kanal som trigget og aktuelle `A/B/C`-nivaaer via UART. Dette gir hall-debug uten aa blokkere inne i ISR.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 6
+- **Files changed:** Bachelor/Core/Inc/myprint.h, Bachelor/Core/Src/myprint.c, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/Core/Src/main.c, Bachelor/log.md
+- **What/Why:** La til en enkel `myprint`-modul for UART-terminal via Nucleo `COM1` / `LPUART1` paa `PA2` (TX) og `PA3` (RX). Modulen kan skrive tekst og polle/echo mottatte tegn. Samtidig ble motorsekvensen satt paa pause for ren UART-testing, `defaultTask` ble endret til aa prosessere terminalinput og sende periodiske statusmeldinger, og dobbel `BSP_COM_Init()` i `main.c` ble fjernet slik at UART bare initialiseres ett sted.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 5
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** Endret startfrekvensen for soft-start fra `100 Hz` til `1000 Hz`. Duty cycle i den GPIO-baserte 3-fasetesten ble beholdt paa `25 %` med samme 12-stegs fasesekvens.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 4
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** Endret startfrekvensen for soft-start til `100 Hz`. For aa faa `25 %` duty i den GPIO-baserte 3-fasetesten ble tilstandstabellen utvidet fra `6` til `12` steg, slik at hver fase er high i `3 av 12` steg med `120 grader` faseforskyvning.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 3
+- **Files changed:** Bachelor/Core/Inc/myapp.h, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** Justerte soft-startprofilen slik at lave frekvenser holdes lenger og rampen blir mer aggressiv etter hvert. Delay mellom steg er naa progressiv i stedet for fast, og prosentvis frekvensoekning oeker med frekvensen. Flyttet ogsaa opprettelsen av blink-tasken til `App_StartTasks()` i `myapp`, som kalles fra FreeRTOS-init etter at kernel er initialisert.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23
+- **Files changed:** Bachelor/Core/Inc/pwm_control.h, Bachelor/Core/Src/pwm_control.c, Bachelor/Core/Src/myapp.c, Bachelor/log.md
+- **What/Why:** La til runtime-styring av frekvens for den GPIO-baserte 3-fasetesten og en myk oppstartsrampe i `App_Init()`. Oppstarten begynner naa paa `10 Hz` og oeker gradvis mot `20 kHz` med `50 ms` mellom hvert trinn. Rampa bruker en enkel prosentvis oekning per steg for aa gi roligere oppstart ved lave frekvenser enn store lineare hopp.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 2
+- **Files changed:** Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** Flyttet frekvensrampen ut av `App_Init()` og inn i `defaultTask` i FreeRTOS. `App_Init()` starter naa kun den GPIO-baserte 3-fasetesten paa `10 Hz`, mens `defaultTask` oeker frekvensen videre hvert `50 ms`. Dette gjoer at rampen skjer mens systemet faktisk kjorer, i stedet for aa bli fullfort under init.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23
+- **Files changed:** Bachelor/Core/Inc/pwm_control.h, Bachelor/Core/Src/pwm_control.c, Bachelor/Core/Src/myapp.c, Bachelor/log.md
+- **What/Why:** La til runtime-styring av frekvens for den GPIO-baserte 3-fasetesten og en myk oppstartsrampe i `App_Init()`. Oppstarten begynner naa paa `10 Hz` og oeker gradvis mot `20 kHz` med `50 ms` mellom hvert trinn. Rampa bruker en enkel prosentvis oekning per steg for aa gi roligere oppstart ved lave frekvenser enn store lineare hopp.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
 ### Endring 2026-03-20 13:10
 - **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
 - **What/Why:** Endret den GPIO-baserte 3-fasetesten fra 20 kHz til 2 kHz ved aa redusere testens step-frekvens fra 120 kHz til 12 kHz. `TIM1.Prescaler` i CubeMX hadde ikke effekt paa denne testen fordi `PWM_HardwareTest_3Phase()` rekonfigurerer TIM1 direkte ved runtime.
@@ -137,4 +229,8 @@ Alle fremtidige kodeendringer skal loggføres her med tidspunkt, filer, hva som 
 ### Endring 2026-03-20 13:47
 - **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
 - **What/Why:** Forenklet frekvensoppsettet i den GPIO-baserte 3-fasetesten slik at frekvensen naa styres av én konstant: `PWM_TEST_OUTPUT_FREQUENCY_HZ`. Step-frekvensen beregnes automatisk fra antall testtilstander, og en fast test-prescaler brukes for aa unngaa 16-bit begrensningen ved lave frekvenser.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-23 23
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Gjorde den systematiske kommuteringstestingen eksplisitt i kode ved aa samle alle seks fase-permutasjonene (`UVW->CH321`, `CH132`, `CH123`, `CH312`, `CH231`, `CH213`) i en tabell og styre valgt kandidat med `MOTOR_COMMUTATION_PHASE_MAP`. `MOTOR_COMMUTATION_SECTOR_OFFSET` beholdes som separat testparameter `0..5`. UART viser naa aktiv konfigurasjon (`cfg`) og offset i baade oppstart og `COMM`-prints, slik at hver iterasjon kan testes og dokumenteres uten tvetydighet.
 - **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.

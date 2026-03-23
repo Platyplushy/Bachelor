@@ -15,6 +15,7 @@
  *        Kalles fra main.c etter at periferiutstyr er konfigurert.
  */
 void App_Init(void);
+void App_StartTasks(void);
 
 /**
  * @brief Applikasjonens hovedløkke.
