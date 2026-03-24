@@ -12,6 +12,7 @@
 #include "motor_commutation.h"
 #include "myprint.h"
 #include "pwm_control.h"
+#include "reset_diag.h"
 #include "adc.h"
 #include "dma.h"
 #include "tim.h"
@@ -44,6 +45,7 @@ void App_Init(void) {
     }
 
     MyPrint_Init();
+    ResetDiag_PrintAndClear();
     HallDebug_Init();
     HallProbe_Init();
     HallStateFilter_Init();

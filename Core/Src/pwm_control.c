@@ -11,7 +11,7 @@
 #define PWM_TEST_MAX_OUTPUT_FREQUENCY_HZ     20000U
 #define PWM_TEST_TIM_PRESCALER               44U
 #define PWM_TIM1_COMMUTATION_PRESCALER       0U
-#define PWM_TIM1_COMMUTATION_PERIOD          4249U
+#define PWM_TIM1_COMMUTATION_PERIOD          8499U
 #define PWM_TEST_HIGH_A_PIN                  GPIO_PIN_8
 #define PWM_TEST_HIGH_B_PIN                  GPIO_PIN_9
 #define PWM_TEST_HIGH_C_PIN                  GPIO_PIN_10

@@ -250,3 +250,95 @@ Alle fremtidige kodeendringer skal loggføres her med tidspunkt, filer, hva som 
 - **Files changed:** Bachelor/flytskjema.md, Bachelor/log.md
 - **What/Why:** La til en første tegnet flytskjema-skisse i dokumentet med ASCII-bokser og piler. Skissen viser oppstart, runtime, hall/kommutering, joystick, dødmansknapp, display og batteri i en mer visuell form som kan videreutvikles sammen.
 - **Build/Test result:** Ikke kjort. Dokumentasjonsendring.
+### Endring 2026-03-24 1
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Etter at alle sektoroffsettene ga samme resultat, ble kommuteringstesten utvidet med en eksplisitt polaritetsvariant via `MOTOR_COMMUTATION_INVERT_POLARITY`. Dette bytter `HIGH` og `LOW` i hele 6-step-tabellen uten aa endre hall-lesing eller fase-permutasjon. Hensikten er aa teste om selve kraftretningen i tabellen er feil, selv om hall-sekvens og sektorbytter ser riktige ut. UART viser naa ogsaa `inv=0/1` sammen med `cfg` og `off`.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 2
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Endret TIM1-fasestyringen til en enklere 6-step-modell inspirert av BLDC-eksempelet: `HIGH` betyr naa kun PWM paa high-side-utgangen, `LOW` betyr kun low-side-utgangen aktiv, og `FLOAT` betyr begge av. Tidligere brukte `HIGH`/`LOW` begge TIM1-utgangene samtidig som et komplementaert par, noe som kan ha gitt riktig PWM-bilde paa scope men feil kraftvei i inverteren. Denne endringen tester hypotesen om at selve realiseringen av kommuteringstilstandene var feil, ikke hall-sekvensen.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 3
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Reverterte den alternative 6-step-realiseringen etter test paa target. Varianten med eksplisitt high-side-PWM og separat low-side-utgang ga verken rykk eller stroemtrekk, noe som tyder paa at det aktuelle drivertrinnet deres ikke kan drives paa den maaten med dagens TIM1-oppsett. `PWM_PHASE_STATE_HIGH/LOW/FLOAT` er derfor satt tilbake til den opprinnelige komplementaere TIM1-logikken.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 4
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** La til en eksplisitt manuell faseprobe-modus i kommuteringsmodulen. Med `MOTOR_COMMUTATION_MODE_MANUAL_PROBE` holdes ett fast fasepar aktivt (`U+V-`, `U+W-`, `V+W-`, `V+U-`, `W+U-`, `W+V-`) valgt via `MOTOR_COMMUTATION_MANUAL_STEP`, uten hall-oppdateringer. Hensikten er aa identifisere den faktiske elektriske fasekoblingen og se hvilke kombinasjoner som gir laasing/moment direkte, siden hall-basert kommutering hittil ikke har skilt kandidatene tydelig.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 5
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Forenklet den manuelle faseprobetesten ytterligere ved aa sette TIM1-kommuterings-PWM til `10 kHz` og starte paa `5 %` duty med automatisk opptrapping til `25 %`. I manuell probe-modus oekes duty med `2.5 %` hvert `400 ms` mens samme fasepar holdes aktivt. Hensikten er aa se om motoren bygger moment gradvis i en enklere og mykere test enn et fast hopp til hoey duty.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 6
+- **Files changed:** Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** Oekte `defaultTask`-stacken tilbake til `512 * 4` bytes. Den hadde falt tilbake til `128 * 4`, og med `MyPrint_Printf()` i manuell probe/ramp-modus er det sannsynligvis for lite. Dette passer godt med symptomet der UART-prints og blink-task stoppet rett etter oppstart.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 7
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Byttet fra fast manuell faseprobe til en enkel open-loop 6-step testmodus. Dette er fortsatt uavhengig av hall-kommutering, men i stedet for aa holde ett fast fasepar aktivt gaar den naa sakte gjennom step `1..6` med `150 ms` mellom trinnene. Duty starter fortsatt paa `5 %` og rampes opp til `25 %`. Hensikten er aa skille mellom "motoren laaser seg fordi ett felt holdes fast" og "motoren klarer ikke aa foelge en enkel elektrisk sekvens i det hele tatt".
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 8
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Brukte open-loop-loggen som grunnlag for en eksplisitt hall-til-kommuteringsmapping og byttet tilbake til hall-basert modus. Siden motoren faktisk gikk rundt i open-loop med `UVW->CH321`, men veldig hakkete, er neste naturlige steg aa kommutere synkront med hall-sektorene i stedet for med fast tidsbase. Den nye tabellen mapper hallsektor `1..6` til den open-loop-stepen som faktisk saa ut til aa dra rotoren videre i loggen, i stedet for aa bruke enkel sektoroffset alene.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 9
+- **Files changed:** Bachelor/Core/Src/gpio.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** La til `PB12` som poll-basert start/stopp for motorstyringen. Pinnen er konfigurert som `GPIO_INPUT` med `PULLUP`, og kommuteringen holdes helt av ved oppstart til knappen trykkes. Et nytt trykk stopper motoren og setter alle tre faser til `FLOAT`. Dette er gjort for aa unngaa at motor/PWM starter automatisk mens dere programmerer eller feilsoker paa stoyete PCB. UART oppgir ogsaa naa at startknappen er `PB12` med aktiv lav antakelse.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 10
+- **Files changed:** Bachelor/Core/Inc/motor_commutation.h, Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** Strammet inn `PB12`-start/stopp-flyten slik at hall-filteret ikke prosesseres eller printer noe foer motoren faktisk er aktivert. `defaultTask` poller naa start/stopp via `MotorCommutation_Process()` foerst, og kaller bare `HallStateFilter_Process()` naar motoren er enablet. Dette reduserer risikoen for oppstartsustabilitet/UART-flom paa stoyete PCB foer brukeren trykker start.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 11
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Slo av de loepende `HALL FILTER`- og `COMM`-printf-ene under drift via egne debug-flagg. Hvis MCU-en klikker idet foerste hall-overgang kommer inn, er UART-belastning og `vsnprintf`/blocking transmit i tettsittende overgangsloeper en sannsynlig software-aarsak. Endringen lar oss teste samme hall- og kommuteringslogikk uten runtime-printspam.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 12
+- **Files changed:** Bachelor/Core/Src/stm32g4xx_it.c, Bachelor/log.md
+- **What/Why:** Endret `HardFault_Handler()` til aa disable interrupts og trigge `NVIC_SystemReset()` i stedet for aa bli staaende i en uendelig loekke. Hensikten er aa gjore kortet mer brukbart under feilsoking naar en hardfault utloeses av stoy eller feil i motorstyringen.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 13
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Skrev om hall-modusen til en eksplisitt seksjonsmodell med `switch (hall_sector)` i stedet for indirekte hall-til-step-oppslag. Hver gyldig hallsektor `1..6` velger naa direkte hvilket fasepar som skal vaere aktivt, med kommentarer som viser tilsiktet elektrisk seksjon (`U+V-`, `U+W-`, `V+W-`, osv.). Dette gjoer kommuteringslogikken lettere aa lese, verifisere og tune naar fokus er "i denne seksjonen skal disse transistorene vaere paa".
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 14
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/log.md
+- **What/Why:** Slo paa igjen runtime-print for aksepterte hall-tilstander i `hall_state_filter`. Disse ble tidligere skrudd av for aa redusere UART-belastning under feilsoking av oppstartsproblemer, men brukeren trenger naa igjen a se hvilke hallsektorer som faktisk blir akseptert av filteret.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 15
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Gjorde hall-basert oppstart mildere ved aa bare latch-e foerste gyldige hallsektor etter start og vente paa neste gyldige sektorovergang foer kommutering faktisk aktiveres. Hensikten er aa unngaa at krafttrinnet slaas paa momentant i samme oeyeblikk som foerste hall-lesing kommer inn, siden det var akkurat der systemet klikket.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 16
+- **Files changed:** Bachelor/Core/Src/gpio.c, Bachelor/log.md
+- **What/Why:** Fjernet EXTI-modus fra hall-pinnene og satte dem til rene `GPIO_MODE_INPUT` under videre feilsoking. Hallfiltreringen bruker allerede polling i `hall_state_filter`, sa EXTI paa `PC1/PC7/PC9` var ikke nodvendig for motorstyringen og kunne bidra til IRQ-stoy eller ustabilitet naar hallsignalene begynte aa svinge. EXTI0/1/2/3-NVIC-enable for disse linjene ble ogsaa tatt ut fra `gpio.c`.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 17
+- **Files changed:** Bachelor/Core/Inc/reset_diag.h, Bachelor/Core/Src/reset_diag.c, Bachelor/Core/Src/myapp.c, Bachelor/log.md
+- **What/Why:** La til enkel reset-diagnostikk som skriver resetkilden ved oppstart (`POR/PDR`, `BOR`, `PINRST`, `SFTRST`, `IWDG`, `WWDG`, `LPWR`). Dette er gjort fordi kortet ser ut til aa restarte uten a gaa via `HardFault_Handler()`, og vi trenger aa skille mellom software reset, watchdog, brown-out og ekstern reset/stoy paa resetlinjen.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 18
+- **Files changed:** Bachelor/Core/Src/reset_diag.c, Bachelor/log.md
+- **What/Why:** Rettet reset-diagnostikken til STM32G4-flaggenes faktiske navn. `RCC_CSR_PORRSTF` finnes ikke paa STM32G431, sa utskriften ble endret til aa bruke `OBLRSTF`, `BORRSTF`, `PINRSTF`, `SFTRSTF`, `IWDGRSTF`, `WWDGRSTF` og `LPWRRSTF`.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 19
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Forenklet `PB12`-styringen fra toggle start/stopp med debounce og intern state-maskin til en ren "hold for aa kjoere"-gate. Naar `PB12` holdes lav, resettes runtime-state og motorstyringen er enablet; naar knappen slippes, disable-es utgangene umiddelbart. Hensikten er aa eliminere ekstra knappelogikk som mulig kilde til ustabilitet etter at brukeren observerte at problemene oppstod etter knappintegrasjonen.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 20
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Inc/motor_commutation.h, Bachelor/Core/Src/app_freertos.c, Bachelor/Core/Src/gpio.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** Rullet tilbake motorstyringen til siste kjente stadie foer knappintegrasjon og de senere hall-start/gate-endringene begynte aa gi reset-problemer. Dette setter kommuteringen tilbake til den enklere open-loop-varianten ved `10 kHz` med duty-ramp og uten `PB12`-gate. `app_freertos` kaller igjen hallfilter og kommutering uten knappavhengig gating, og `PB12` er tatt ut av GPIO-oppsett og pindokumentasjon. Reset-diagnostikken ble beholdt fordi den er passiv og nyttig under videre feilsoking.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 21
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** La inn en ren isolasjonstest ved aa sette `MOTOR_COMMUTATION_MODE` til `DISABLED`. Da prosesseres hallfilteret fortsatt og kan skrive gyldige hallsektorer, men motorstyringen skriver ikke nye kommuteringstrinn under drift. Hensikten er aa skille mellom "reset ved hall-lesing" og "reset idet motorstyringen faktisk skriver fasekommandoer".
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 22
+- **Files changed:** Bachelor/Core/Src/app_freertos.c, Bachelor/Core/Src/hall_state_filter.c, Bachelor/log.md
+- **What/Why:** Rettet sannsynlig oppstartsreset ved aa oeke `defaultTask`-stacken tilbake til `512 * 4` bytes og samtidig skru av loepende `HALL FILTER`-printf ved runtime. Endringsloggen dokumenterer allerede at `128 * 4` tidligere ga symptomer som stopp i UART/blink rett etter oppstart, og at `MyPrint_Printf()`/`vsnprintf()` i task-kontekst var en sannsynlig utløsende faktor. Denne endringen reduserer baade stackpress og blokkende UART-arbeid i oppstartsloopen.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-03-24 23
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/gpio.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** Slo paa igjen UART-utskrift av aksepterte hallsektorer, satte motorstyringen tilbake til hall-modus, og la til `PB12` som poll-basert toggle-knapp for motoren. `PB12` er konfigurert som `GPIO_INPUT` med intern `PULLUP`; et trykk toggler mellom motor av/paa, og naar motoren er av settes alle tre faser til `FLOAT`. Dette gir hall-observasjoner igjen uten aa starte motoren automatisk ved oppstart.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.

@@ -5,6 +5,7 @@
 #define HALL_FILTER_SAMPLE_PERIOD_MS   1U
 #define HALL_FILTER_STABLE_COUNT       2U
 #define HALL_FILTER_INVALID_CODE       0xFFU
+#define HALL_FILTER_ENABLE_RUNTIME_PRINTS 1U
 
 typedef struct {
     uint8_t hall_code;
@@ -105,12 +106,14 @@ static void HallStateFilter_AcceptState(uint8_t hall_code)
     s_latestState = state;
     s_hasLatestState = 1U;
 
+#if HALL_FILTER_ENABLE_RUNTIME_PRINTS
     MyPrint_Printf("HALL FILTER: sector=%u UVW=%u%u%u code=0x%X\r\n",
                    state.sector,
                    state.hall_u,
                    state.hall_v,
                    state.hall_w,
                    state.hall_code);
+#endif
 }
 
 void HallStateFilter_Init(void)

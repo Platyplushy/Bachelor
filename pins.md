@@ -38,6 +38,10 @@ All firmware agents must follow this mapping when generating code.
 | USART2_TX | USART2_TX | PA2 | GPIOA |
 | USART2_RX | USART2_RX | PA3 | GPIOA |
 
+| Signal      | Function           | Pin  | Port  |
+| ----------- | ------------------ | ---- | ----- |
+| MOTOR_START | Motor start/stop   | PB12 | GPIOB |
+
 | Signal | Pin  | Port  |
 | ------ | ---- | ----- |
 | SWDIO  | PA13 | GPIOA |
