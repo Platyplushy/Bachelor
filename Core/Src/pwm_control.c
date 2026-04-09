@@ -10,8 +10,8 @@
 #define PWM_TEST_DEFAULT_OUTPUT_FREQUENCY_HZ 1000U
 #define PWM_TEST_MAX_OUTPUT_FREQUENCY_HZ     20000U
 #define PWM_TEST_TIM_PRESCALER               44U
-#define PWM_TIM1_COMMUTATION_PRESCALER       0U
-#define PWM_TIM1_COMMUTATION_PERIOD          8499U
+#define PWM_TIM1_COMMUTATION_PRESCALER       3U
+#define PWM_TIM1_COMMUTATION_PERIOD          42499U
 #define PWM_TEST_HIGH_A_PIN                  GPIO_PIN_8
 #define PWM_TEST_HIGH_B_PIN                  GPIO_PIN_9
 #define PWM_TEST_HIGH_C_PIN                  GPIO_PIN_10
@@ -42,7 +42,10 @@ static const PWM_TestState kPwmTestStateTable[PWM_TEST_STATE_COUNT] = {
 
 static volatile uint32_t s_pwmTestStateIndex = 0U;
 static volatile uint32_t s_pwmTestOutputFrequencyHz = PWM_TEST_DEFAULT_OUTPUT_FREQUENCY_HZ;
-static uint8_t s_tim1ChannelEnabled[3] = {0U, 0U, 0U};
+static uint8_t s_tim1MainEnabled[3] = {0U, 0U, 0U};
+static uint8_t s_tim1CompEnabled[3] = {0U, 0U, 0U};
+static uint8_t s_tim8MainEnabled[3] = {0U, 0U, 0U};
+static uint8_t s_tim8CompEnabled[3] = {0U, 0U, 0U};
 
 static void PWM_TestApplyHighSideState(uint32_t state_index) {
     const PWM_TestState *state = &kPwmTestStateTable[state_index % PWM_TEST_STATE_COUNT];
@@ -118,38 +121,88 @@ static uint8_t PWM_TIM1_GetChannelIndex(uint32_t channel) {
     }
 }
 
-static void PWM_TIM1_EnableChannelPair(uint32_t channel) {
-    uint8_t channel_index = PWM_TIM1_GetChannelIndex(channel);
-
-    if (s_tim1ChannelEnabled[channel_index] != 0U) {
-        return;
+static uint8_t *PWM_GetMainEnableTable(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM1) {
+        return s_tim1MainEnabled;
+    }
+    if (htim->Instance == TIM8) {
+        return s_tim8MainEnabled;
     }
 
-    if (HAL_TIM_PWM_Start(&htim1, channel) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIMEx_PWMN_Start(&htim1, channel) != HAL_OK) {
-        Error_Handler();
-    }
-
-    s_tim1ChannelEnabled[channel_index] = 1U;
+    Error_Handler();
+    return s_tim1MainEnabled;
 }
 
-static void PWM_TIM1_DisableChannelPair(uint32_t channel) {
-    uint8_t channel_index = PWM_TIM1_GetChannelIndex(channel);
+static uint8_t *PWM_GetCompEnableTable(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM1) {
+        return s_tim1CompEnabled;
+    }
+    if (htim->Instance == TIM8) {
+        return s_tim8CompEnabled;
+    }
 
-    if (s_tim1ChannelEnabled[channel_index] == 0U) {
+    Error_Handler();
+    return s_tim1CompEnabled;
+}
+
+static void PWM_EnableMainChannel(TIM_HandleTypeDef *htim, uint32_t channel) {
+    uint8_t channel_index = PWM_TIM1_GetChannelIndex(channel);
+    uint8_t *channel_enabled = PWM_GetMainEnableTable(htim);
+
+    if (channel_enabled[channel_index] != 0U) {
         return;
     }
 
-    if (HAL_TIM_PWM_Stop(&htim1, channel) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIMEx_PWMN_Stop(&htim1, channel) != HAL_OK) {
+    if (HAL_TIM_PWM_Start(htim, channel) != HAL_OK) {
         Error_Handler();
     }
 
-    s_tim1ChannelEnabled[channel_index] = 0U;
+    channel_enabled[channel_index] = 1U;
+}
+
+static void PWM_DisableMainChannel(TIM_HandleTypeDef *htim, uint32_t channel) {
+    uint8_t channel_index = PWM_TIM1_GetChannelIndex(channel);
+    uint8_t *channel_enabled = PWM_GetMainEnableTable(htim);
+
+    if (channel_enabled[channel_index] == 0U) {
+        return;
+    }
+
+    if (HAL_TIM_PWM_Stop(htim, channel) != HAL_OK) {
+        Error_Handler();
+    }
+
+    channel_enabled[channel_index] = 0U;
+}
+
+static void PWM_EnableCompChannel(TIM_HandleTypeDef *htim, uint32_t channel) {
+    uint8_t channel_index = PWM_TIM1_GetChannelIndex(channel);
+    uint8_t *channel_enabled = PWM_GetCompEnableTable(htim);
+
+    if (channel_enabled[channel_index] != 0U) {
+        return;
+    }
+
+    if (HAL_TIMEx_PWMN_Start(htim, channel) != HAL_OK) {
+        Error_Handler();
+    }
+
+    channel_enabled[channel_index] = 1U;
+}
+
+static void PWM_DisableCompChannel(TIM_HandleTypeDef *htim, uint32_t channel) {
+    uint8_t channel_index = PWM_TIM1_GetChannelIndex(channel);
+    uint8_t *channel_enabled = PWM_GetCompEnableTable(htim);
+
+    if (channel_enabled[channel_index] == 0U) {
+        return;
+    }
+
+    if (HAL_TIMEx_PWMN_Stop(htim, channel) != HAL_OK) {
+        Error_Handler();
+    }
+
+    channel_enabled[channel_index] = 0U;
 }
 
 static uint32_t PWM_TestComputePeriod(uint32_t output_frequency_hz) {
@@ -240,28 +293,28 @@ void PWM_Init(void) {
     PWM_SetMotor2Duty(0.0f);
 }
 
-void PWM_TIM1_Configure3PhaseComplementary(void) {
+static void PWM_Configure3PhaseComplementary(TIM_HandleTypeDef *htim, uint8_t *channel_enabled) {
     TIM_OC_InitTypeDef sConfigOC = {0};
     const uint32_t period = PWM_TIM1_COMMUTATION_PERIOD;
     const uint32_t pulse = (period + 1U) / 2U;
 
-    HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
-    HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
-    HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_3);
-    HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_1);
-    HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_2);
-    HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_3);
+    HAL_TIM_PWM_Stop(htim, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Stop(htim, TIM_CHANNEL_2);
+    HAL_TIM_PWM_Stop(htim, TIM_CHANNEL_3);
+    HAL_TIMEx_PWMN_Stop(htim, TIM_CHANNEL_1);
+    HAL_TIMEx_PWMN_Stop(htim, TIM_CHANNEL_2);
+    HAL_TIMEx_PWMN_Stop(htim, TIM_CHANNEL_3);
 
-    __HAL_TIM_DISABLE(&htim1);
+    __HAL_TIM_DISABLE(htim);
 
-    htim1.Init.Prescaler = PWM_TIM1_COMMUTATION_PRESCALER;
-    htim1.Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
-    htim1.Init.Period = period;
-    htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    htim1.Init.RepetitionCounter = 0;
-    htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+    htim->Init.Prescaler = PWM_TIM1_COMMUTATION_PRESCALER;
+    htim->Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
+    htim->Init.Period = period;
+    htim->Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim->Init.RepetitionCounter = 0;
+    htim->Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
 
-    if (HAL_TIM_PWM_Init(&htim1) != HAL_OK) {
+    if (HAL_TIM_PWM_Init(htim) != HAL_OK) {
         Error_Handler();
     }
 
@@ -273,47 +326,65 @@ void PWM_TIM1_Configure3PhaseComplementary(void) {
     sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
     sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
 
-    if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK) {
+    if (HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, TIM_CHANNEL_1) != HAL_OK) {
         Error_Handler();
     }
-    if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK) {
+    if (HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, TIM_CHANNEL_2) != HAL_OK) {
         Error_Handler();
     }
-    if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3) != HAL_OK) {
-        Error_Handler();
-    }
-
-    PWM_ApplyDeadtime(&htim1, 400U);
-
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, pulse);
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, pulse);
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, pulse);
-    HAL_TIM_GenerateEvent(&htim1, TIM_EVENTSOURCE_UPDATE);
-
-    if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3) != HAL_OK) {
+    if (HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, TIM_CHANNEL_3) != HAL_OK) {
         Error_Handler();
     }
 
-    s_tim1ChannelEnabled[0] = 1U;
-    s_tim1ChannelEnabled[1] = 1U;
-    s_tim1ChannelEnabled[2] = 1U;
+    PWM_ApplyDeadtime(htim, 400U);
 
-    __HAL_TIM_MOE_ENABLE(&htim1);
+    __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_1, pulse);
+    __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, pulse);
+    __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, pulse);
+    HAL_TIM_GenerateEvent(htim, TIM_EVENTSOURCE_UPDATE);
+
+    if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_1) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_2) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_3) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIMEx_PWMN_Start(htim, TIM_CHANNEL_1) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIMEx_PWMN_Start(htim, TIM_CHANNEL_2) != HAL_OK) {
+        Error_Handler();
+    }
+    if (HAL_TIMEx_PWMN_Start(htim, TIM_CHANNEL_3) != HAL_OK) {
+        Error_Handler();
+    }
+
+    channel_enabled[0] = 1U;
+    channel_enabled[1] = 1U;
+    channel_enabled[2] = 1U;
+
+    if (htim->Instance == TIM1) {
+        s_tim1CompEnabled[0] = 1U;
+        s_tim1CompEnabled[1] = 1U;
+        s_tim1CompEnabled[2] = 1U;
+    } else {
+        s_tim8CompEnabled[0] = 1U;
+        s_tim8CompEnabled[1] = 1U;
+        s_tim8CompEnabled[2] = 1U;
+    }
+
+    __HAL_TIM_MOE_ENABLE(htim);
+}
+
+void PWM_TIM1_Configure3PhaseComplementary(void) {
+    PWM_Configure3PhaseComplementary(&htim1, s_tim1MainEnabled);
+}
+
+void PWM_TIM8_Configure3PhaseComplementary(void) {
+    PWM_Configure3PhaseComplementary(&htim8, s_tim8MainEnabled);
 }
 
 /**
@@ -363,8 +434,7 @@ void PWM_Set_DutyCycle(uint32_t channel, float duty) {
     if (duty < 0.0f) duty = 0.0f;
     if (duty > 100.0f) duty = 100.0f;
 
-    // ARR er 8499, så pulsverdien beregnes ut fra dette.
-    // Puls = (ARR + 1) * duty / 100
+    // Puls beregnes direkte fra gjeldende ARR-verdi.
     uint32_t pulse = (uint32_t)(((float)(htim1.Instance->ARR + 1) * duty) / 100.0f);
     
     __HAL_TIM_SET_COMPARE(&htim1, channel, pulse);
@@ -379,6 +449,46 @@ static void PWM_SetAllChannels(TIM_HandleTypeDef *htim, float duty) {
     __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_1, pulse);
     __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, pulse);
     __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, pulse);
+}
+
+static void PWM_SetPhaseState(TIM_HandleTypeDef *htim, uint32_t channel, PWM_PhaseState state, float duty) {
+    const uint32_t always_low_compare = 0U;
+
+    switch (state) {
+        case PWM_PHASE_STATE_FLOAT:
+            __HAL_TIM_SET_COMPARE(htim, channel, 0U);
+            PWM_DisableMainChannel(htim, channel);
+            PWM_DisableCompChannel(htim, channel);
+            break;
+
+        case PWM_PHASE_STATE_HIGH:
+            if (htim->Instance == TIM1) {
+                PWM_Set_DutyCycle(channel, duty);
+            } else {
+                uint32_t pulse = (uint32_t)(((float)(htim->Instance->ARR + 1) * duty) / 100.0f);
+                __HAL_TIM_SET_COMPARE(htim, channel, pulse);
+            }
+            PWM_DisableCompChannel(htim, channel);
+            PWM_EnableMainChannel(htim, channel);
+            break;
+
+        case PWM_PHASE_STATE_LOW:
+            if (htim->Instance == TIM1) {
+                PWM_Set_DutyCycle(channel, duty);
+            } else {
+                uint32_t pulse = (uint32_t)(((float)(htim->Instance->ARR + 1) * duty) / 100.0f);
+                __HAL_TIM_SET_COMPARE(htim, channel, pulse);
+            }
+            PWM_DisableMainChannel(htim, channel);
+            PWM_EnableCompChannel(htim, channel);
+            break;
+
+        default:
+            Error_Handler();
+            break;
+    }
+
+    __HAL_TIM_MOE_ENABLE(htim);
 }
 
 void PWM_SetMotor1Duty(float duty) {
@@ -396,28 +506,7 @@ void PWM_SetMotor2Duty(float duty) {
 }
 
 void PWM_TIM1_SetPhaseState(uint32_t channel, PWM_PhaseState state, float duty) {
-    switch (state) {
-        case PWM_PHASE_STATE_FLOAT:
-            __HAL_TIM_SET_COMPARE(&htim1, channel, 0U);
-            PWM_TIM1_DisableChannelPair(channel);
-            break;
-
-        case PWM_PHASE_STATE_HIGH:
-            PWM_Set_DutyCycle(channel, duty);
-            PWM_TIM1_EnableChannelPair(channel);
-            break;
-
-        case PWM_PHASE_STATE_LOW:
-            __HAL_TIM_SET_COMPARE(&htim1, channel, 0U);
-            PWM_TIM1_EnableChannelPair(channel);
-            break;
-
-        default:
-            Error_Handler();
-            break;
-    }
-
-    __HAL_TIM_MOE_ENABLE(&htim1);
+    PWM_SetPhaseState(&htim1, channel, state, duty);
 }
 
 void PWM_TIM1_SetPhaseStates(PWM_PhaseState state_u,
@@ -427,6 +516,19 @@ void PWM_TIM1_SetPhaseStates(PWM_PhaseState state_u,
     PWM_TIM1_SetPhaseState(TIM_CHANNEL_1, state_u, duty);
     PWM_TIM1_SetPhaseState(TIM_CHANNEL_2, state_v, duty);
     PWM_TIM1_SetPhaseState(TIM_CHANNEL_3, state_w, duty);
+}
+
+void PWM_TIM8_SetPhaseState(uint32_t channel, PWM_PhaseState state, float duty) {
+    PWM_SetPhaseState(&htim8, channel, state, duty);
+}
+
+void PWM_TIM8_SetPhaseStates(PWM_PhaseState state_u,
+                             PWM_PhaseState state_v,
+                             PWM_PhaseState state_w,
+                             float duty) {
+    PWM_TIM8_SetPhaseState(TIM_CHANNEL_1, state_u, duty);
+    PWM_TIM8_SetPhaseState(TIM_CHANNEL_2, state_v, duty);
+    PWM_TIM8_SetPhaseState(TIM_CHANNEL_3, state_w, duty);
 }
 
 void PWM_HardwareTest_3Phase(void) {

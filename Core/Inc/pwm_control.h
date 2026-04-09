@@ -26,6 +26,7 @@ void PWM_Init(void);
  * @brief Konfigurerer TIM1 for 3-fase komplementaer PWM.
  */
 void PWM_TIM1_Configure3PhaseComplementary(void);
+void PWM_TIM8_Configure3PhaseComplementary(void);
 
 /**
  * @brief Starter PWM på de konfigurerte kanalene.
@@ -64,6 +65,11 @@ void PWM_SetMotor1PhaseDuties(float duty_a, float duty_b, float duty_c);
 void PWM_SetMotor2Duty(float duty);
 void PWM_TIM1_SetPhaseState(uint32_t channel, PWM_PhaseState state, float duty);
 void PWM_TIM1_SetPhaseStates(PWM_PhaseState state_u,
+                             PWM_PhaseState state_v,
+                             PWM_PhaseState state_w,
+                             float duty);
+void PWM_TIM8_SetPhaseState(uint32_t channel, PWM_PhaseState state, float duty);
+void PWM_TIM8_SetPhaseStates(PWM_PhaseState state_u,
                              PWM_PhaseState state_v,
                              PWM_PhaseState state_w,
                              float duty);

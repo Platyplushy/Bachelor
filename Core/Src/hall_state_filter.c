@@ -2,15 +2,33 @@
 
 #include "myprint.h"
 
-#define HALL_FILTER_SAMPLE_PERIOD_MS   1U
-#define HALL_FILTER_STABLE_COUNT       2U
-#define HALL_FILTER_INVALID_CODE       0xFFU
+#define HALL_FILTER_SAMPLE_PERIOD_MS      0U
+#define HALL_FILTER_STABLE_COUNT          1U
+#define HALL_FILTER_INVALID_CODE          0xFFU
 #define HALL_FILTER_ENABLE_RUNTIME_PRINTS 1U
 
 typedef struct {
     uint8_t hall_code;
     uint8_t sector;
 } HallCodeSectorMap;
+
+typedef struct {
+    GPIO_TypeDef *u_port;
+    uint16_t u_pin;
+    GPIO_TypeDef *v_port;
+    uint16_t v_pin;
+    GPIO_TypeDef *w_port;
+    uint16_t w_pin;
+    const char *name;
+} HallFilter_MotorPins;
+
+typedef struct {
+    HallStateFilter_State latest_state;
+    uint8_t has_latest_state;
+    uint8_t candidate_hall_code;
+    uint8_t candidate_stable_count;
+    uint32_t last_sample_tick;
+} HallFilter_Runtime;
 
 static const HallCodeSectorMap kHallSequence[] = {
     {0x1U, 1U}, /* UVW = 001 */
@@ -21,22 +39,23 @@ static const HallCodeSectorMap kHallSequence[] = {
     {0x3U, 6U}  /* UVW = 011 */
 };
 
-static HallStateFilter_State s_latestState = {0U};
-static uint8_t s_hasLatestState = 0U;
-static uint8_t s_candidateHallCode = HALL_FILTER_INVALID_CODE;
-static uint8_t s_candidateStableCount = 0U;
-static uint32_t s_lastSampleTick = 0U;
+static const HallFilter_MotorPins kHallFilterMotorPins[HALL_STATE_FILTER_MOTOR_COUNT] = {
+    {GPIOC, GPIO_PIN_9, GPIOC, GPIO_PIN_1, GPIOC, GPIO_PIN_7, "M1"},
+    {GPIOC, GPIO_PIN_2, GPIOC, GPIO_PIN_3, GPIOC, GPIO_PIN_8, "M2"}
+};
 
+static HallFilter_Runtime s_hallFilterRuntime[HALL_STATE_FILTER_MOTOR_COUNT];
 static uint8_t HallStateFilter_ReadPin(GPIO_TypeDef *port, uint16_t pin)
 {
     return (HAL_GPIO_ReadPin(port, pin) == GPIO_PIN_SET) ? 1U : 0U;
 }
 
-static uint8_t HallStateFilter_ReadHallCode(void)
+static uint8_t HallStateFilter_ReadHallCode(HallStateFilter_MotorIndex motor_index)
 {
-    uint8_t hall_u = HallStateFilter_ReadPin(GPIOC, GPIO_PIN_7);
-    uint8_t hall_v = HallStateFilter_ReadPin(GPIOC, GPIO_PIN_1);
-    uint8_t hall_w = HallStateFilter_ReadPin(GPIOC, GPIO_PIN_9);
+    const HallFilter_MotorPins *pins = &kHallFilterMotorPins[motor_index];
+    const uint8_t hall_u = HallStateFilter_ReadPin(pins->u_port, pins->u_pin);
+    const uint8_t hall_v = HallStateFilter_ReadPin(pins->v_port, pins->v_pin);
+    const uint8_t hall_w = HallStateFilter_ReadPin(pins->w_port, pins->w_pin);
 
     return (uint8_t)((hall_u << 2) | (hall_v << 1) | hall_w);
 }
@@ -58,7 +77,7 @@ static uint8_t HallStateFilter_IsAdjacent(uint8_t previous_code, uint8_t next_co
 {
     uint8_t previous_index;
     uint8_t next_index;
-    uint8_t sequence_size = (uint8_t)(sizeof(kHallSequence) / sizeof(kHallSequence[0]));
+    const uint8_t sequence_size = (uint8_t)(sizeof(kHallSequence) / sizeof(kHallSequence[0]));
 
     previous_index = HallStateFilter_FindSequenceIndex(previous_code);
     next_index = HallStateFilter_FindSequenceIndex(next_code);
@@ -95,19 +114,21 @@ static uint8_t HallStateFilter_FillState(uint8_t hall_code, HallStateFilter_Stat
     return 1U;
 }
 
-static void HallStateFilter_AcceptState(uint8_t hall_code)
+static void HallStateFilter_AcceptState(HallStateFilter_MotorIndex motor_index, uint8_t hall_code)
 {
     HallStateFilter_State state;
+    HallFilter_Runtime *runtime = &s_hallFilterRuntime[motor_index];
 
     if (HallStateFilter_FillState(hall_code, &state) == 0U) {
         return;
     }
 
-    s_latestState = state;
-    s_hasLatestState = 1U;
+    runtime->latest_state = state;
+    runtime->has_latest_state = 1U;
 
 #if HALL_FILTER_ENABLE_RUNTIME_PRINTS
-    MyPrint_Printf("HALL FILTER: sector=%u UVW=%u%u%u code=0x%X\r\n",
+    MyPrint_Printf("HALL %s: sector=%u UVW=%u%u%u code=0x%X\r\n",
+                   kHallFilterMotorPins[motor_index].name,
                    state.sector,
                    state.hall_u,
                    state.hall_v,
@@ -116,65 +137,82 @@ static void HallStateFilter_AcceptState(uint8_t hall_code)
 #endif
 }
 
+static void HallStateFilter_ProcessMotor(HallStateFilter_MotorIndex motor_index, uint32_t now)
+{
+    HallFilter_Runtime *runtime = &s_hallFilterRuntime[motor_index];
+    uint8_t hall_code;
+
+    if ((HALL_FILTER_SAMPLE_PERIOD_MS != 0U) &&
+        ((now - runtime->last_sample_tick) < HALL_FILTER_SAMPLE_PERIOD_MS)) {
+        return;
+    }
+    runtime->last_sample_tick = now;
+
+    hall_code = HallStateFilter_ReadHallCode(motor_index);
+
+    if (HallStateFilter_FindSequenceIndex(hall_code) == HALL_FILTER_INVALID_CODE) {
+        runtime->candidate_hall_code = HALL_FILTER_INVALID_CODE;
+        runtime->candidate_stable_count = 0U;
+        return;
+    }
+
+    if (hall_code != runtime->candidate_hall_code) {
+        runtime->candidate_hall_code = hall_code;
+        runtime->candidate_stable_count = 1U;
+        return;
+    }
+
+    if (runtime->candidate_stable_count < 0xFFU) {
+        ++runtime->candidate_stable_count;
+    }
+
+    if (runtime->candidate_stable_count < HALL_FILTER_STABLE_COUNT) {
+        return;
+    }
+
+    if ((runtime->has_latest_state != 0U) && (hall_code == runtime->latest_state.hall_code)) {
+        return;
+    }
+
+    if ((runtime->has_latest_state != 0U) &&
+        (HallStateFilter_IsAdjacent(runtime->latest_state.hall_code, hall_code) == 0U)) {
+        return;
+    }
+
+    HallStateFilter_AcceptState(motor_index, hall_code);
+}
+
 void HallStateFilter_Init(void)
 {
-    s_hasLatestState = 0U;
-    s_candidateHallCode = HALL_FILTER_INVALID_CODE;
-    s_candidateStableCount = 0U;
-    s_lastSampleTick = HAL_GetTick();
-    MyPrint_Print("Hall state filter ready: mapping A=W, B=V, C=U\r\n");
+    uint32_t i;
+    const uint32_t now = HAL_GetTick();
+
+    for (i = 0U; i < HALL_STATE_FILTER_MOTOR_COUNT; ++i) {
+        s_hallFilterRuntime[i].has_latest_state = 0U;
+        s_hallFilterRuntime[i].candidate_hall_code = HALL_FILTER_INVALID_CODE;
+        s_hallFilterRuntime[i].candidate_stable_count = 0U;
+        s_hallFilterRuntime[i].last_sample_tick = now;
+    }
+    MyPrint_Print("Hall state filter ready: M1=PC9/PC1/PC7 M2=PC2/PC3/PC8\r\n");
 }
 
 void HallStateFilter_Process(void)
 {
-    uint32_t now;
-    uint8_t hall_code;
+    const uint32_t now = HAL_GetTick();
 
-    now = HAL_GetTick();
-    if ((now - s_lastSampleTick) < HALL_FILTER_SAMPLE_PERIOD_MS) {
-        return;
-    }
-    s_lastSampleTick = now;
-
-    hall_code = HallStateFilter_ReadHallCode();
-
-    if (HallStateFilter_FindSequenceIndex(hall_code) == HALL_FILTER_INVALID_CODE) {
-        s_candidateHallCode = HALL_FILTER_INVALID_CODE;
-        s_candidateStableCount = 0U;
-        return;
-    }
-
-    if (hall_code != s_candidateHallCode) {
-        s_candidateHallCode = hall_code;
-        s_candidateStableCount = 1U;
-        return;
-    }
-
-    if (s_candidateStableCount < 0xFFU) {
-        ++s_candidateStableCount;
-    }
-
-    if (s_candidateStableCount < HALL_FILTER_STABLE_COUNT) {
-        return;
-    }
-
-    if ((s_hasLatestState != 0U) && (hall_code == s_latestState.hall_code)) {
-        return;
-    }
-
-    if ((s_hasLatestState != 0U) && (HallStateFilter_IsAdjacent(s_latestState.hall_code, hall_code) == 0U)) {
-        return;
-    }
-
-    HallStateFilter_AcceptState(hall_code);
+    HallStateFilter_ProcessMotor(HALL_STATE_FILTER_MOTOR_1, now);
+    HallStateFilter_ProcessMotor(HALL_STATE_FILTER_MOTOR_2, now);
 }
 
-uint8_t HallStateFilter_GetLatestState(HallStateFilter_State *state)
+uint8_t HallStateFilter_GetLatestState(HallStateFilter_MotorIndex motor_index,
+                                       HallStateFilter_State *state)
 {
-    if ((state == NULL) || (s_hasLatestState == 0U)) {
+    if ((motor_index >= HALL_STATE_FILTER_MOTOR_COUNT) ||
+        (state == NULL) ||
+        (s_hallFilterRuntime[motor_index].has_latest_state == 0U)) {
         return 0U;
     }
 
-    *state = s_latestState;
+    *state = s_hallFilterRuntime[motor_index].latest_state;
     return 1U;
 }

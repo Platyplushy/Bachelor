@@ -19,12 +19,14 @@ All firmware agents must follow this mapping when generating code.
 
 | Signal   | Pin | Port  |
 | -------- | --- | ----- |
-| HALL_1_A | PC9 | GPIOC |
-| HALL_1_B | PC1 | GPIOC |
-| HALL_1_C | PC7 | GPIOC |
-| HALL_2_A | PC2 | GPIOC |
-| HALL_2_B | PC3 | GPIOC |
-| HALL_2_C | PC8 | GPIOC |
+| HALL_1_U | PC9 | GPIOC |
+| HALL_1_V | PC1 | GPIOC |
+| HALL_1_W | PC7 | GPIOC |
+| HALL_2_U | PC2 | GPIOC |
+| HALL_2_V | PC3 | GPIOC |
+| HALL_2_W | PC8 | GPIOC |
+
+Hall-signaler skal leses som `UVW` i firmware. Dette matcher `hall_state_filter.c`, som bygger hall-koden som `(U << 2) | (V << 1) | W`.
 
 | Signal     | ADC Function | Pin | Port  |
 | ---------- | ------------ | --- | ----- |

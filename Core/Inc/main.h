@@ -68,12 +68,25 @@ void Error_Handler(void);
 #define RCC_OSC_IN_GPIO_Port GPIOF
 #define RCC_OSC_OUT_Pin GPIO_PIN_1
 #define RCC_OSC_OUT_GPIO_Port GPIOF
+#define Hall_1_V_Pin GPIO_PIN_1
+#define Hall_1_V_GPIO_Port GPIOC
+#define Hall_1_V_EXTI_IRQn EXTI1_IRQn
+#define Hall_2_U_Pin GPIO_PIN_2
+#define Hall_2_U_GPIO_Port GPIOC
+#define Hall_2_U_EXTI_IRQn EXTI2_IRQn
+#define Hall_2_V_Pin GPIO_PIN_3
+#define Hall_2_V_GPIO_Port GPIOC
+#define Hall_2_V_EXTI_IRQn EXTI3_IRQn
+#define Hall_1_W_Pin GPIO_PIN_7
+#define Hall_1_W_GPIO_Port GPIOC
+#define Hall_2_W_Pin GPIO_PIN_8
+#define Hall_2_W_GPIO_Port GPIOC
+#define Hall_1_U_Pin GPIO_PIN_9
+#define Hall_1_U_GPIO_Port GPIOC
 #define T_SWDIO_Pin GPIO_PIN_13
 #define T_SWDIO_GPIO_Port GPIOA
 #define T_SWCLK_Pin GPIO_PIN_14
 #define T_SWCLK_GPIO_Port GPIOA
-#define T_SWO_Pin GPIO_PIN_3
-#define T_SWO_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

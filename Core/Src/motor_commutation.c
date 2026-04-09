@@ -4,46 +4,55 @@
 #include "myprint.h"
 #include "pwm_control.h"
 
-#define MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT      5.0f
+#define MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT   5.0f
+#define MOTOR_COMMUTATION_TARGET_DUTY_PERCENT    25.0f
+#define MOTOR_COMMUTATION_RAMP_STEP_PERCENT      0.2f
+#define MOTOR_COMMUTATION_RAMP_INTERVAL_MS       100U
 
-#define MOTOR_COMMUTATION_PHASE_MAP_UVW_VWU         0U
-#define MOTOR_COMMUTATION_PHASE_MAP_WUV_UVW         1U
-#define MOTOR_COMMUTATION_PHASE_MAP_WVU             2U
-#define MOTOR_COMMUTATION_PHASE_MAP_UWV             3U
-#define MOTOR_COMMUTATION_PHASE_MAP_VUW             4U
-#define MOTOR_COMMUTATION_PHASE_MAP_VWU             5U
+#define MOTOR_COMMUTATION_SECTOR_OFFSET          0U
+#define MOTOR_COMMUTATION_INVERT_POLARITY        0U
+#define MOTOR_COMMUTATION_MODE_HALL              0U
+#define MOTOR_COMMUTATION_MODE_MOTOR1_SWEEP      1U
+#define MOTOR_COMMUTATION_MODE                   MOTOR_COMMUTATION_MODE_HALL
+#define MOTOR_COMMUTATION_SWEEP_INTERVAL_MS      100U
+#define MOTOR_COMMUTATION_SWEEP_START_STEP       1U
+#define MOTOR_COMMUTATION_SWEEP_FIXED_DUTY       5.0f
+#define MOTOR_COMMUTATION_ENABLE_RUNTIME_PRINTS  0U
+#define MOTOR_COMMUTATION_BUTTON_PIN             GPIO_PIN_12
+#define MOTOR_COMMUTATION_BUTTON_PORT            GPIOB
+#define MOTOR_COMMUTATION_BUTTON_PRESSED_STATE   GPIO_PIN_RESET
+#define MOTOR_COMMUTATION_BUTTON_DEBOUNCE_MS     30U
 
-#define MOTOR_COMMUTATION_PHASE_MAP                 MOTOR_COMMUTATION_PHASE_MAP_UVW_VWU
-#define MOTOR_COMMUTATION_SECTOR_OFFSET            0U
-#define MOTOR_COMMUTATION_INVERT_POLARITY          0U
-#define MOTOR_COMMUTATION_MODE_HALL                0U
-#define MOTOR_COMMUTATION_MODE_MANUAL_PROBE        1U
-#define MOTOR_COMMUTATION_MODE_OPEN_LOOP           2U
-#define MOTOR_COMMUTATION_MODE_DISABLED            3U
-#define MOTOR_COMMUTATION_MODE                     MOTOR_COMMUTATION_MODE_HALL
-#define MOTOR_COMMUTATION_MANUAL_STEP              3U
-#define MOTOR_COMMUTATION_MANUAL_RAMP_STEP_PERCENT 2.5f
-#define MOTOR_COMMUTATION_MANUAL_RAMP_MAX_PERCENT  25.0f
-#define MOTOR_COMMUTATION_MANUAL_RAMP_PERIOD_MS    400U
-#define MOTOR_COMMUTATION_OPEN_LOOP_STEP_PERIOD_MS 150U
-#define MOTOR_COMMUTATION_ENABLE_RUNTIME_PRINTS    1U
-#define MOTOR_COMMUTATION_BUTTON_PIN               GPIO_PIN_12
-#define MOTOR_COMMUTATION_BUTTON_PORT              GPIOB
-#define MOTOR_COMMUTATION_BUTTON_PRESSED_STATE     GPIO_PIN_RESET
-#define MOTOR_COMMUTATION_BUTTON_DEBOUNCE_MS       30U
+typedef enum {
+    MOTOR_COMMUTATION_MOTOR_1 = 0,
+    MOTOR_COMMUTATION_MOTOR_2 = 1,
+    MOTOR_COMMUTATION_MOTOR_COUNT
+} MotorCommutation_MotorIndex;
 
-typedef struct {
-    uint32_t u_channel;
-    uint32_t v_channel;
-    uint32_t w_channel;
-    const char *name;
-} MotorCommutation_PhaseMap;
+typedef void (*MotorCommutation_SetPhaseStateFn)(uint32_t channel, PWM_PhaseState state, float duty);
+typedef void (*MotorCommutation_ConfigurePwmFn)(void);
 
 typedef struct {
     PWM_PhaseState phase_u;
     PWM_PhaseState phase_v;
     PWM_PhaseState phase_w;
 } MotorCommutation_PhasePattern;
+
+typedef struct {
+    const char *name;
+    HallStateFilter_MotorIndex hall_index;
+    MotorCommutation_ConfigurePwmFn configure_pwm;
+    MotorCommutation_SetPhaseStateFn set_phase_state;
+} MotorCommutation_MotorConfig;
+
+typedef struct {
+    float duty_percent;
+    uint8_t last_hall_code;
+    uint8_t has_state;
+    uint32_t last_ramp_tick_ms;
+    uint8_t sweep_step;
+    uint32_t last_sweep_tick_ms;
+} MotorCommutation_Runtime;
 
 static const MotorCommutation_PhasePattern kMotorCommutationTable[6] = {
     {PWM_PHASE_STATE_HIGH,  PWM_PHASE_STATE_LOW,   PWM_PHASE_STATE_FLOAT},
@@ -54,133 +63,16 @@ static const MotorCommutation_PhasePattern kMotorCommutationTable[6] = {
     {PWM_PHASE_STATE_FLOAT, PWM_PHASE_STATE_LOW,   PWM_PHASE_STATE_HIGH}
 };
 
-static const MotorCommutation_PhasePattern kMotorCommutationManualProbeTable[6] = {
-    {PWM_PHASE_STATE_HIGH,  PWM_PHASE_STATE_LOW,   PWM_PHASE_STATE_FLOAT}, /* U+ V- */
-    {PWM_PHASE_STATE_HIGH,  PWM_PHASE_STATE_FLOAT, PWM_PHASE_STATE_LOW},   /* U+ W- */
-    {PWM_PHASE_STATE_FLOAT, PWM_PHASE_STATE_HIGH,  PWM_PHASE_STATE_LOW},   /* V+ W- */
-    {PWM_PHASE_STATE_LOW,   PWM_PHASE_STATE_HIGH,  PWM_PHASE_STATE_FLOAT}, /* V+ U- */
-    {PWM_PHASE_STATE_LOW,   PWM_PHASE_STATE_FLOAT, PWM_PHASE_STATE_HIGH},  /* W+ U- */
-    {PWM_PHASE_STATE_FLOAT, PWM_PHASE_STATE_LOW,   PWM_PHASE_STATE_HIGH}   /* W+ V- */
+static const MotorCommutation_MotorConfig kMotorCommutationMotorConfig[MOTOR_COMMUTATION_MOTOR_COUNT] = {
+    {"M1", HALL_STATE_FILTER_MOTOR_1, PWM_TIM1_Configure3PhaseComplementary, PWM_TIM1_SetPhaseState},
+    {"M2", HALL_STATE_FILTER_MOTOR_2, PWM_TIM8_Configure3PhaseComplementary, PWM_TIM8_SetPhaseState}
 };
 
-static const MotorCommutation_PhaseMap kMotorCommutationPhaseMaps[] = {
-    {TIM_CHANNEL_3, TIM_CHANNEL_2, TIM_CHANNEL_1, "UVW->CH321"},
-    {TIM_CHANNEL_1, TIM_CHANNEL_3, TIM_CHANNEL_2, "UVW->CH132"},
-    {TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, "UVW->CH123"},
-    {TIM_CHANNEL_3, TIM_CHANNEL_1, TIM_CHANNEL_2, "UVW->CH312"},
-    {TIM_CHANNEL_2, TIM_CHANNEL_3, TIM_CHANNEL_1, "UVW->CH231"},
-    {TIM_CHANNEL_2, TIM_CHANNEL_1, TIM_CHANNEL_3, "UVW->CH213"}
-};
-
-static float s_motorCommutationDutyPercent = MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT;
-static uint8_t s_motorCommutationLastHallCode = 0U;
-static uint8_t s_motorCommutationHasState = 0U;
-static uint32_t s_motorCommutationLastRampTickMs = 0U;
-static uint8_t s_motorCommutationOpenLoopStep = 1U;
+static MotorCommutation_Runtime s_motorRuntime[MOTOR_COMMUTATION_MOTOR_COUNT];
 static uint8_t s_motorCommutationEnabled = 0U;
 static GPIO_PinState s_motorButtonStableState = GPIO_PIN_SET;
 static GPIO_PinState s_motorButtonLastRawState = GPIO_PIN_SET;
 static uint32_t s_motorButtonLastChangeTickMs = 0U;
-
-static void MotorCommutation_ApplyManualProbe(void);
-static void MotorCommutation_ApplyOpenLoopStep(uint8_t step);
-
-static const MotorCommutation_PhaseMap *MotorCommutation_GetPhaseMap(void)
-{
-    if (MOTOR_COMMUTATION_PHASE_MAP >= (sizeof(kMotorCommutationPhaseMaps) / sizeof(kMotorCommutationPhaseMaps[0]))) {
-        Error_Handler();
-    }
-
-    return &kMotorCommutationPhaseMaps[MOTOR_COMMUTATION_PHASE_MAP];
-}
-
-static void MotorCommutation_DisableOutputs(void)
-{
-    const MotorCommutation_PhaseMap *phase_map = MotorCommutation_GetPhaseMap();
-
-    PWM_TIM1_SetPhaseState(phase_map->u_channel, PWM_PHASE_STATE_FLOAT, 0.0f);
-    PWM_TIM1_SetPhaseState(phase_map->v_channel, PWM_PHASE_STATE_FLOAT, 0.0f);
-    PWM_TIM1_SetPhaseState(phase_map->w_channel, PWM_PHASE_STATE_FLOAT, 0.0f);
-}
-
-static void MotorCommutation_ResetRuntimeState(void)
-{
-    s_motorCommutationDutyPercent = MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT;
-    s_motorCommutationHasState = 0U;
-    s_motorCommutationLastHallCode = 0U;
-    s_motorCommutationLastRampTickMs = HAL_GetTick();
-    s_motorCommutationOpenLoopStep = 1U;
-}
-
-static void MotorCommutation_SetEnabled(uint8_t enabled)
-{
-    if (enabled == s_motorCommutationEnabled) {
-        return;
-    }
-
-    s_motorCommutationEnabled = enabled;
-
-    if (s_motorCommutationEnabled == 0U) {
-        MotorCommutation_DisableOutputs();
-        MyPrint_Print("Motor disabled: PB12 toggled OFF\r\n");
-        return;
-    }
-
-    MotorCommutation_ResetRuntimeState();
-    MyPrint_Print("Motor enabled: PB12 toggled ON\r\n");
-
-    if (MOTOR_COMMUTATION_MODE == MOTOR_COMMUTATION_MODE_MANUAL_PROBE) {
-        MotorCommutation_ApplyManualProbe();
-    } else if (MOTOR_COMMUTATION_MODE == MOTOR_COMMUTATION_MODE_OPEN_LOOP) {
-        MotorCommutation_ApplyOpenLoopStep(s_motorCommutationOpenLoopStep);
-    }
-}
-
-static void MotorCommutation_ProcessButton(uint32_t now)
-{
-    GPIO_PinState raw_state = HAL_GPIO_ReadPin(MOTOR_COMMUTATION_BUTTON_PORT, MOTOR_COMMUTATION_BUTTON_PIN);
-
-    if (raw_state != s_motorButtonLastRawState) {
-        s_motorButtonLastRawState = raw_state;
-        s_motorButtonLastChangeTickMs = now;
-    }
-
-    if ((now - s_motorButtonLastChangeTickMs) < MOTOR_COMMUTATION_BUTTON_DEBOUNCE_MS) {
-        return;
-    }
-
-    if (raw_state == s_motorButtonStableState) {
-        return;
-    }
-
-    s_motorButtonStableState = raw_state;
-    if (s_motorButtonStableState == MOTOR_COMMUTATION_BUTTON_PRESSED_STATE) {
-        MotorCommutation_SetEnabled((uint8_t)(s_motorCommutationEnabled == 0U));
-    }
-}
-
-static uint8_t MotorCommutation_GetCommandSector(uint8_t hall_sector)
-{
-    if ((hall_sector < 1U) || (hall_sector > 6U)) {
-        return 0U;
-    }
-
-    return (uint8_t)(((hall_sector - 1U + MOTOR_COMMUTATION_SECTOR_OFFSET) % 6U) + 1U);
-}
-
-static const char *MotorCommutation_PhaseStateName(PWM_PhaseState state)
-{
-    switch (state) {
-        case PWM_PHASE_STATE_FLOAT:
-            return "FLOAT";
-        case PWM_PHASE_STATE_HIGH:
-            return "HIGH";
-        case PWM_PHASE_STATE_LOW:
-            return "LOW";
-        default:
-            return "UNKNOWN";
-    }
-}
 
 static PWM_PhaseState MotorCommutation_ApplyPolarityVariant(PWM_PhaseState state)
 {
@@ -199,174 +91,278 @@ static PWM_PhaseState MotorCommutation_ApplyPolarityVariant(PWM_PhaseState state
     }
 }
 
-static void MotorCommutation_ApplyPattern(const MotorCommutation_PhasePattern *pattern,
+static void MotorCommutation_DisableMotorOutputs(MotorCommutation_MotorIndex motor_index)
+{
+    const MotorCommutation_MotorConfig *motor = &kMotorCommutationMotorConfig[motor_index];
+
+    motor->set_phase_state(TIM_CHANNEL_1, PWM_PHASE_STATE_FLOAT, 0.0f);
+    motor->set_phase_state(TIM_CHANNEL_2, PWM_PHASE_STATE_FLOAT, 0.0f);
+    motor->set_phase_state(TIM_CHANNEL_3, PWM_PHASE_STATE_FLOAT, 0.0f);
+}
+
+static void MotorCommutation_DisableAllOutputs(void)
+{
+    uint32_t i;
+
+    for (i = 0U; i < MOTOR_COMMUTATION_MOTOR_COUNT; ++i) {
+        MotorCommutation_DisableMotorOutputs((MotorCommutation_MotorIndex)i);
+    }
+}
+
+static void MotorCommutation_ResetRuntimeState(MotorCommutation_MotorIndex motor_index)
+{
+    s_motorRuntime[motor_index].duty_percent = MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT;
+    s_motorRuntime[motor_index].has_state = 0U;
+    s_motorRuntime[motor_index].last_hall_code = 0U;
+    s_motorRuntime[motor_index].last_ramp_tick_ms = HAL_GetTick();
+    s_motorRuntime[motor_index].sweep_step = MOTOR_COMMUTATION_SWEEP_START_STEP;
+    s_motorRuntime[motor_index].last_sweep_tick_ms = HAL_GetTick();
+}
+
+static uint8_t MotorCommutation_ProcessSoftStart(MotorCommutation_MotorIndex motor_index, uint32_t now)
+{
+    MotorCommutation_Runtime *runtime = &s_motorRuntime[motor_index];
+
+    if (runtime->duty_percent >= MOTOR_COMMUTATION_TARGET_DUTY_PERCENT) {
+        return 0U;
+    }
+
+    if ((now - runtime->last_ramp_tick_ms) < MOTOR_COMMUTATION_RAMP_INTERVAL_MS) {
+        return 0U;
+    }
+
+    runtime->last_ramp_tick_ms = now;
+    runtime->duty_percent += MOTOR_COMMUTATION_RAMP_STEP_PERCENT;
+    if (runtime->duty_percent > MOTOR_COMMUTATION_TARGET_DUTY_PERCENT) {
+        runtime->duty_percent = MOTOR_COMMUTATION_TARGET_DUTY_PERCENT;
+    }
+
+    return 1U;
+}
+
+static uint8_t MotorCommutation_GetCommandSector(uint8_t hall_sector)
+{
+    if ((hall_sector < 1U) || (hall_sector > 6U)) {
+        return 0U;
+    }
+
+    return (uint8_t)(((hall_sector - 1U + MOTOR_COMMUTATION_SECTOR_OFFSET) % 6U) + 1U);
+}
+
+static void MotorCommutation_ApplyPattern(MotorCommutation_MotorIndex motor_index,
+                                          const MotorCommutation_PhasePattern *pattern,
                                           const char *source,
                                           uint8_t source_index)
 {
-    const MotorCommutation_PhaseMap *phase_map = MotorCommutation_GetPhaseMap();
-    PWM_PhaseState phase_u = MotorCommutation_ApplyPolarityVariant(pattern->phase_u);
-    PWM_PhaseState phase_v = MotorCommutation_ApplyPolarityVariant(pattern->phase_v);
-    PWM_PhaseState phase_w = MotorCommutation_ApplyPolarityVariant(pattern->phase_w);
+    const MotorCommutation_MotorConfig *motor = &kMotorCommutationMotorConfig[motor_index];
+    const float duty = s_motorRuntime[motor_index].duty_percent;
+    const PWM_PhaseState phase_u = MotorCommutation_ApplyPolarityVariant(pattern->phase_u);
+    const PWM_PhaseState phase_v = MotorCommutation_ApplyPolarityVariant(pattern->phase_v);
+    const PWM_PhaseState phase_w = MotorCommutation_ApplyPolarityVariant(pattern->phase_w);
 
-    PWM_TIM1_SetPhaseState(phase_map->u_channel, phase_u, s_motorCommutationDutyPercent);
-    PWM_TIM1_SetPhaseState(phase_map->v_channel, phase_v, s_motorCommutationDutyPercent);
-    PWM_TIM1_SetPhaseState(phase_map->w_channel, phase_w, s_motorCommutationDutyPercent);
+    motor->set_phase_state(TIM_CHANNEL_1, phase_u, duty);
+    motor->set_phase_state(TIM_CHANNEL_2, phase_v, duty);
+    motor->set_phase_state(TIM_CHANNEL_3, phase_w, duty);
 
 #if MOTOR_COMMUTATION_ENABLE_RUNTIME_PRINTS
-    MyPrint_Printf("%s cfg=%s off=%u inv=%u step=%u U->CH%u=%s V->CH%u=%s W->CH%u=%s duty=%.1f\r\n",
+    MyPrint_Printf("%s %s cfg=CH123 off=%u inv=%u step=%u duty=%.1f\r\n",
+                   motor->name,
                    source,
-                   phase_map->name,
                    (unsigned)MOTOR_COMMUTATION_SECTOR_OFFSET,
                    (unsigned)MOTOR_COMMUTATION_INVERT_POLARITY,
                    source_index,
-                   (unsigned)((phase_map->u_channel >> 2) + 1U),
-                   MotorCommutation_PhaseStateName(phase_u),
-                   (unsigned)((phase_map->v_channel >> 2) + 1U),
-                   MotorCommutation_PhaseStateName(phase_v),
-                   (unsigned)((phase_map->w_channel >> 2) + 1U),
-                   MotorCommutation_PhaseStateName(phase_w),
-                   (double)s_motorCommutationDutyPercent);
+                   (double)duty);
 #else
     (void)source;
     (void)source_index;
 #endif
 }
 
-static void MotorCommutation_ApplySector(uint8_t hall_sector, uint8_t command_sector)
+static void MotorCommutation_ApplySector(MotorCommutation_MotorIndex motor_index, uint8_t command_sector)
 {
-    const MotorCommutation_PhasePattern *pattern;
-    (void)hall_sector;
-
     if ((command_sector < 1U) || (command_sector > 6U)) {
-        MotorCommutation_DisableOutputs();
+        MotorCommutation_DisableMotorOutputs(motor_index);
         return;
     }
 
-    pattern = &kMotorCommutationTable[command_sector - 1U];
-    MotorCommutation_ApplyPattern(pattern, "COMM", command_sector);
+    MotorCommutation_ApplyPattern(motor_index,
+                                  &kMotorCommutationTable[command_sector - 1U],
+                                  "COMM",
+                                  command_sector);
 }
 
-static void MotorCommutation_ApplyManualProbe(void)
+static void MotorCommutation_ProcessMotor1Sweep(uint32_t now)
 {
-    const uint8_t step_index = (uint8_t)(MOTOR_COMMUTATION_MANUAL_STEP - 1U);
+    MotorCommutation_Runtime *runtime = &s_motorRuntime[MOTOR_COMMUTATION_MOTOR_1];
 
-    if ((MOTOR_COMMUTATION_MANUAL_STEP < 1U) || (MOTOR_COMMUTATION_MANUAL_STEP > 6U)) {
-        Error_Handler();
+    MotorCommutation_DisableMotorOutputs(MOTOR_COMMUTATION_MOTOR_2);
+    runtime->duty_percent = MOTOR_COMMUTATION_SWEEP_FIXED_DUTY;
+
+    if ((now - runtime->last_sweep_tick_ms) < MOTOR_COMMUTATION_SWEEP_INTERVAL_MS) {
+        return;
     }
 
-    MotorCommutation_ApplyPattern(&kMotorCommutationManualProbeTable[step_index],
-                                  "COMM MANUAL",
-                                  MOTOR_COMMUTATION_MANUAL_STEP);
+    runtime->last_sweep_tick_ms = now;
+
+    if ((runtime->sweep_step < 1U) || (runtime->sweep_step > 6U)) {
+        runtime->sweep_step = MOTOR_COMMUTATION_SWEEP_START_STEP;
+    }
+
+    MotorCommutation_ApplySector(MOTOR_COMMUTATION_MOTOR_1, runtime->sweep_step);
+    MyPrint_Printf("M1 SWEEP: step=%u duty=%.1f\r\n",
+                   (unsigned)runtime->sweep_step,
+                   (double)runtime->duty_percent);
+
+    runtime->sweep_step = (uint8_t)((runtime->sweep_step % 6U) + 1U);
 }
 
-static void MotorCommutation_ApplyOpenLoopStep(uint8_t step)
+static void MotorCommutation_SetEnabled(uint8_t enabled)
 {
-    const uint8_t step_index = (uint8_t)(step - 1U);
+    uint32_t i;
 
-    if ((step < 1U) || (step > 6U)) {
-        Error_Handler();
+    if (enabled == s_motorCommutationEnabled) {
+        return;
     }
 
-    MotorCommutation_ApplyPattern(&kMotorCommutationManualProbeTable[step_index],
-                                  "COMM OPEN",
-                                  step);
+    s_motorCommutationEnabled = enabled;
+
+    if (s_motorCommutationEnabled == 0U) {
+        MotorCommutation_DisableAllOutputs();
+        MyPrint_Print("Motors disabled: PB12 toggled OFF\r\n");
+        return;
+    }
+
+    for (i = 0U; i < MOTOR_COMMUTATION_MOTOR_COUNT; ++i) {
+        MotorCommutation_ResetRuntimeState((MotorCommutation_MotorIndex)i);
+    }
+
+    if (MOTOR_COMMUTATION_MODE == MOTOR_COMMUTATION_MODE_MOTOR1_SWEEP) {
+        s_motorRuntime[MOTOR_COMMUTATION_MOTOR_1].duty_percent = MOTOR_COMMUTATION_SWEEP_FIXED_DUTY;
+        MotorCommutation_DisableMotorOutputs(MOTOR_COMMUTATION_MOTOR_2);
+        MotorCommutation_ApplySector(MOTOR_COMMUTATION_MOTOR_1,
+                                     s_motorRuntime[MOTOR_COMMUTATION_MOTOR_1].sweep_step);
+        MyPrint_Printf("Motors enabled: M1 sweep ON, duty=%.1f step=%u\r\n",
+                       (double)s_motorRuntime[MOTOR_COMMUTATION_MOTOR_1].duty_percent,
+                       (unsigned)s_motorRuntime[MOTOR_COMMUTATION_MOTOR_1].sweep_step);
+        s_motorRuntime[MOTOR_COMMUTATION_MOTOR_1].sweep_step =
+            (uint8_t)((s_motorRuntime[MOTOR_COMMUTATION_MOTOR_1].sweep_step % 6U) + 1U);
+        s_motorRuntime[MOTOR_COMMUTATION_MOTOR_1].last_sweep_tick_ms = HAL_GetTick();
+        return;
+    }
+
+    MyPrint_Printf("Motors enabled: M1+M2 hall ON, soft-start %.1f%% -> %.1f%%\r\n",
+                   (double)MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT,
+                   (double)MOTOR_COMMUTATION_TARGET_DUTY_PERCENT);
+}
+
+static void MotorCommutation_ProcessButton(uint32_t now)
+{
+    (void)now;
+#if 0
+    const GPIO_PinState raw_state = HAL_GPIO_ReadPin(MOTOR_COMMUTATION_BUTTON_PORT, MOTOR_COMMUTATION_BUTTON_PIN);
+
+    if (raw_state != s_motorButtonLastRawState) {
+        MyPrint_Printf("PB12 raw=%u\r\n", (unsigned)((raw_state == GPIO_PIN_SET) ? 1U : 0U));
+        s_motorButtonLastRawState = raw_state;
+        s_motorButtonLastChangeTickMs = now;
+    }
+
+    if ((now - s_motorButtonLastChangeTickMs) < MOTOR_COMMUTATION_BUTTON_DEBOUNCE_MS) {
+        return;
+    }
+
+    if (raw_state == s_motorButtonStableState) {
+        return;
+    }
+
+    s_motorButtonStableState = raw_state;
+    MyPrint_Printf("PB12 debounced=%u\r\n", (unsigned)((s_motorButtonStableState == GPIO_PIN_SET) ? 1U : 0U));
+    if (s_motorButtonStableState == MOTOR_COMMUTATION_BUTTON_PRESSED_STATE) {
+        MyPrint_Print("PB12 press accepted\r\n");
+        MotorCommutation_SetEnabled((uint8_t)(s_motorCommutationEnabled == 0U));
+    }
+#endif
+}
+
+static void MotorCommutation_ProcessMotor(MotorCommutation_MotorIndex motor_index, uint32_t now)
+{
+    HallStateFilter_State state;
+    const MotorCommutation_MotorConfig *motor = &kMotorCommutationMotorConfig[motor_index];
+    MotorCommutation_Runtime *runtime = &s_motorRuntime[motor_index];
+    uint8_t command_sector;
+    uint8_t duty_changed;
+
+    duty_changed = MotorCommutation_ProcessSoftStart(motor_index, now);
+
+    if (HallStateFilter_GetLatestState(motor->hall_index, &state) == 0U) {
+        return;
+    }
+
+    if ((runtime->has_state != 0U) && (state.hall_code == runtime->last_hall_code)) {
+        if (duty_changed != 0U) {
+            command_sector = MotorCommutation_GetCommandSector(state.sector);
+            MotorCommutation_ApplySector(motor_index, command_sector);
+        }
+        return;
+    }
+
+    runtime->last_hall_code = state.hall_code;
+    runtime->has_state = 1U;
+
+    command_sector = MotorCommutation_GetCommandSector(state.sector);
+    MotorCommutation_ApplySector(motor_index, command_sector);
 }
 
 void MotorCommutation_Init(void)
 {
-    const MotorCommutation_PhaseMap *phase_map = MotorCommutation_GetPhaseMap();
+    uint32_t i;
 
-    PWM_TIM1_Configure3PhaseComplementary();
-    MotorCommutation_DisableOutputs();
+    for (i = 0U; i < MOTOR_COMMUTATION_MOTOR_COUNT; ++i) {
+        kMotorCommutationMotorConfig[i].configure_pwm();
+    }
+    MotorCommutation_DisableAllOutputs();
 
-    MotorCommutation_ResetRuntimeState();
+    for (i = 0U; i < MOTOR_COMMUTATION_MOTOR_COUNT; ++i) {
+        MotorCommutation_ResetRuntimeState((MotorCommutation_MotorIndex)i);
+    }
+
     s_motorCommutationEnabled = 0U;
     s_motorButtonStableState = HAL_GPIO_ReadPin(MOTOR_COMMUTATION_BUTTON_PORT, MOTOR_COMMUTATION_BUTTON_PIN);
     s_motorButtonLastRawState = s_motorButtonStableState;
     s_motorButtonLastChangeTickMs = HAL_GetTick();
+    MotorCommutation_SetEnabled(1U);
 
-    MyPrint_Printf("Motor commutation ready: mode=%u cfg=%s off=%u inv=%u duty=%.1f pwm=10kHz PB12=toggle\r\n",
+    MyPrint_Printf("Motor commutation ready: mode=%u cfg=CH123 off=%u inv=%u duty=%.1f->%.1f M1=PC9/PC1/PC7 M2=PC2/PC3/PC8\r\n",
                    (unsigned)MOTOR_COMMUTATION_MODE,
-                   phase_map->name,
                    (unsigned)MOTOR_COMMUTATION_SECTOR_OFFSET,
                    (unsigned)MOTOR_COMMUTATION_INVERT_POLARITY,
-                   (double)s_motorCommutationDutyPercent);
+                   (double)MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT,
+                   (double)MOTOR_COMMUTATION_TARGET_DUTY_PERCENT);
 }
 
 void MotorCommutation_Process(void)
 {
-    HallStateFilter_State state;
-    uint8_t command_sector;
-    uint32_t now;
+    const uint32_t now = HAL_GetTick();
 
-    now = HAL_GetTick();
     MotorCommutation_ProcessButton(now);
-
-    if (MOTOR_COMMUTATION_MODE == MOTOR_COMMUTATION_MODE_DISABLED) {
-        MotorCommutation_DisableOutputs();
-        return;
-    }
 
     if (s_motorCommutationEnabled == 0U) {
         return;
     }
 
-    if (MOTOR_COMMUTATION_MODE == MOTOR_COMMUTATION_MODE_MANUAL_PROBE) {
-        if ((now - s_motorCommutationLastRampTickMs) >= MOTOR_COMMUTATION_MANUAL_RAMP_PERIOD_MS) {
-            s_motorCommutationLastRampTickMs = now;
-
-            if (s_motorCommutationDutyPercent < MOTOR_COMMUTATION_MANUAL_RAMP_MAX_PERCENT) {
-                s_motorCommutationDutyPercent += MOTOR_COMMUTATION_MANUAL_RAMP_STEP_PERCENT;
-                if (s_motorCommutationDutyPercent > MOTOR_COMMUTATION_MANUAL_RAMP_MAX_PERCENT) {
-                    s_motorCommutationDutyPercent = MOTOR_COMMUTATION_MANUAL_RAMP_MAX_PERCENT;
-                }
-
-                MotorCommutation_ApplyManualProbe();
-            }
-        }
-
+    if (MOTOR_COMMUTATION_MODE == MOTOR_COMMUTATION_MODE_MOTOR1_SWEEP) {
+        MotorCommutation_ProcessMotor1Sweep(now);
         return;
     }
 
-    if (MOTOR_COMMUTATION_MODE == MOTOR_COMMUTATION_MODE_OPEN_LOOP) {
-        if ((now - s_motorCommutationLastRampTickMs) >= MOTOR_COMMUTATION_MANUAL_RAMP_PERIOD_MS) {
-            s_motorCommutationLastRampTickMs = now;
-
-            if (s_motorCommutationDutyPercent < MOTOR_COMMUTATION_MANUAL_RAMP_MAX_PERCENT) {
-                s_motorCommutationDutyPercent += MOTOR_COMMUTATION_MANUAL_RAMP_STEP_PERCENT;
-                if (s_motorCommutationDutyPercent > MOTOR_COMMUTATION_MANUAL_RAMP_MAX_PERCENT) {
-                    s_motorCommutationDutyPercent = MOTOR_COMMUTATION_MANUAL_RAMP_MAX_PERCENT;
-                }
-            }
-        }
-
-        static uint32_t s_lastOpenLoopStepTickMs = 0U;
-        if ((now - s_lastOpenLoopStepTickMs) >= MOTOR_COMMUTATION_OPEN_LOOP_STEP_PERIOD_MS) {
-            s_lastOpenLoopStepTickMs = now;
-            s_motorCommutationOpenLoopStep = (uint8_t)((s_motorCommutationOpenLoopStep % 6U) + 1U);
-            MotorCommutation_ApplyOpenLoopStep(s_motorCommutationOpenLoopStep);
-        }
-
-        return;
-    }
-
-    if (HallStateFilter_GetLatestState(&state) == 0U) {
-        return;
-    }
-
-    if ((s_motorCommutationHasState != 0U) && (state.hall_code == s_motorCommutationLastHallCode)) {
-        return;
-    }
-
-    s_motorCommutationLastHallCode = state.hall_code;
-    s_motorCommutationHasState = 1U;
-
-    command_sector = MotorCommutation_GetCommandSector(state.sector);
-    MotorCommutation_ApplySector(state.sector, command_sector);
+    MotorCommutation_ProcessMotor(MOTOR_COMMUTATION_MOTOR_1, now);
+    MotorCommutation_ProcessMotor(MOTOR_COMMUTATION_MOTOR_2, now);
 }
 
 void MotorCommutation_SetDuty(float duty_percent)
 {
+    uint32_t i;
+
     if (duty_percent < 0.0f) {
         duty_percent = 0.0f;
     }
@@ -374,5 +370,12 @@ void MotorCommutation_SetDuty(float duty_percent)
         duty_percent = 100.0f;
     }
 
-    s_motorCommutationDutyPercent = duty_percent;
+    for (i = 0U; i < MOTOR_COMMUTATION_MOTOR_COUNT; ++i) {
+        s_motorRuntime[i].duty_percent = duty_percent;
+    }
+}
+
+uint8_t MotorCommutation_UsesHallInputs(void)
+{
+    return (MOTOR_COMMUTATION_MODE == MOTOR_COMMUTATION_MODE_HALL) ? 1U : 0U;
 }

@@ -43,8 +43,6 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define MOTOR_CONTROL_ENABLE_RAW_HALL_DEBUG 0U
-#define MOTOR_CONTROL_LOOP_DELAY_MS         1U
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -61,7 +59,7 @@ osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .priority = (osPriority_t) osPriorityNormal,
-  .stack_size = 512 * 4
+  .stack_size = 128 * 4
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -135,7 +133,10 @@ void StartDefaultTask(void *argument)
     HallProbe_Process();
 #endif
 
-    HallStateFilter_Process();
+    if (MotorCommutation_UsesHallInputs() != 0U)
+    {
+      HallStateFilter_Process();
+    }
     MotorCommutation_Process();
 
     if ((osKernelGetTickCount() - last_status_tick) >= 1000U)
@@ -144,7 +145,7 @@ void StartDefaultTask(void *argument)
       MyPrint_Print("UART alive: RX=PA3 TX=PA2\r\n");
     }
 
-    osDelay(MOTOR_CONTROL_LOOP_DELAY_MS);
+    osThreadYield();
   }
   /* USER CODE END StartDefaultTask */
 }

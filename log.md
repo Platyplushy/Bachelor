@@ -342,3 +342,87 @@ Alle fremtidige kodeendringer skal loggføres her med tidspunkt, filer, hva som 
 - **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/gpio.c, Bachelor/pins.md, Bachelor/log.md
 - **What/Why:** Slo paa igjen UART-utskrift av aksepterte hallsektorer, satte motorstyringen tilbake til hall-modus, og la til `PB12` som poll-basert toggle-knapp for motoren. `PB12` er konfigurert som `GPIO_INPUT` med intern `PULLUP`; et trykk toggler mellom motor av/paa, og naar motoren er av settes alle tre faser til `FLOAT`. Dette gir hall-observasjoner igjen uten aa starte motoren automatisk ved oppstart.
 - **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljoet.
+### Endring 2026-04-07 1
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/gpio.c, Bachelor/log.md
+- **What/Why:** Satt kommuteringen tilbake til hall-basert kjøring på motor 1 med den eksisterende soft-start-rampen (`10 % -> 40 %`) nå som hall-sektorene stemmer på UART-printene. Samtidig ble `PB12` korrigert til `GPIO_PULLUP` slik at aktiv-lav start/stopp-knappen matcher både logikken i `motor_commutation.c` og tidligere dokumentert oppførsel.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-07 2
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/gpio.c, Bachelor/log.md
+- **What/Why:** Rettet Hall 2-mappingen tilbake til `pins.md`. Koden brukte fortsatt en gammel testmapping `PB3/PB11/PC8` for M2, mens dokumentert kobling er `HALL_2_A=PC2`, `HALL_2_B=PC3`, `HALL_2_C=PC8`. Siden filteret internt mapper `U=C`, `V=B`, `W=A`, ble M2 satt til `PC8/PC3/PC2`. Oppstartsprintene ble oppdatert tilsvarende, og den løse `PB11`-GPIO-konfigurasjonen ble fjernet for å unngå at M2 feilaktig leser en kanal som ikke tilhører motor 2.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-07 3
+- **Files changed:** Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** Oppdaterte `pins.md` til å beskrive Hall-signaler som `U/V/W` i stedet for `A/B/C`, slik at dokumentasjonen matcher hvordan `hall_state_filter.c` faktisk leser og skriver ut hall-kodene. Dette gjør sammenligning mellom pin-dokument, `UVW`-print og sektorsekvens entydig.
+- **Build/Test result:** Ikke kjørt. Dokumentasjonsendring.
+### Endring 2026-04-07 4
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** La til UART-debug for `PB12`-knappen. Koden skriver nå rå nivåendringer (`raw`), debounce-resultat (`debounced`) og eksplisitt melding når et trykk blir akseptert. Hensikten er å verifisere om `PB12` faktisk går lav på target og om debounce-/toggle-logikken blir nådd.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-07 5
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Byttet midlertidig fra hall-basert kommutering til en enkel open-loop sweep på motor 1 for videre feilsøking. Den eksisterende sweep-testen var hardkodet mot motor 2; den ble flyttet til motor 1 slik at dere kan teste fasepar og grunnleggende momentoppbygging uten at hall-input påvirker kommuteringen.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-07 6
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Økte open-loop sweep-hastigheten for motor 1 fra `2000 ms` per step til `300 ms` per step. Dette er fortsatt roligere enn en aggressiv `150 ms`-test, men raskt nok til at dere kan se om motoren begynner å bygge rotasjon i stedet for bare å låse i hvert elektriske steg.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-08 1
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** Rettet Hall 1-mappingen slik at firmware matcher faktisk fysisk kobling: `PC9=U`, `PC1=V`, `PC7=W`. Tidligere var `U` og `W` byttet i både kode og dokumentasjon (`PC7=U`, `PC9=W`), noe som gir feil hall-koder relativt til kommuteringstabellen og kan forklare at motoren ikke bygger rotasjon selv om nivåendringene ser plausible ut.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-08 2
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** Rettet også Hall 2-mappingen slik at firmware matcher fysisk kobling: `PC2=U`, `PC3=V`, `PC8=W`. Tidligere var `U` og `W` byttet også for motor 2 (`PC8=U`, `PC2=W`). Oppstartsprintene ble oppdatert slik at både filter og kommuteringsmodul viser samme Hall 2-rekkefølge.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-08 3
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Byttet testmodusen fra open-loop sweep til en ren manuell faseprobe på motor 1, låst til steg `6`, siden brukeren observerte at akkurat dette steget ga moment men hakket. Duty starter nå på `5 %` og rampes lineært opp til `25 %` over `10 s` (`0.2 %` hvert `100 ms`). Hensikten er å se om motoren kan trekkes jevnere inn i rotasjon når det fungerende faseparet holdes fast mens strømmen økes langsomt.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-08 4
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Satt kommuterings-PWM ned til `500 Hz` ved å endre TIM1/TIM8-oppsettet til `PSC=3`, `ARR=42499` i center-aligned mode. Samtidig ble testmodusen satt tilbake til open-loop sweep på motor 1 med fast `5 %` duty og `300 ms` mellom stepene, som en roligere lavfrekvenstest etter at fast steg 6 ikke ga gjennombrudd.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-08 5
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Økte open-loop sweep-tiden på motor 1 fra `300 ms` til `1000 ms` per steg for å gjøre fasebyttene lettere å observere på target. Kommuterings-PWM ble ikke endret i denne runden; den står fortsatt på `500 Hz` i den felles PWM-konfigurasjonen som brukes av både TIM1 og TIM8.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-08 7
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Forenklet kommuteringen til en ren hall-basert 6-step for motor 1 uten sweep og uten sektoroffset. Samtidig ble PWM-laget endret slik at `HIGH` bare aktiverer hovedutgangen (`CHx`) og `LOW` bare aktiverer komplementærutgangen (`CHxN`); `FLOAT` deaktiverer begge. Dette fjerner den tidligere oppførselen der high-side og low-side kunne være aktive samtidig på samme fase i logic analyser, og reduserer risikoen for at alle MOSFET-ene skyter samtidig.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+### Endring 2026-04-08 8
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Rettet kompileringsfeil etter delingen av kanal-state i separate `main`/`comp`-tabeller. `PWM_TIM1_Configure3PhaseComplementary()` og `PWM_TIM8_Configure3PhaseComplementary()` pekte fortsatt til de gamle `s_tim1ChannelEnabled`/`s_tim8ChannelEnabled`-symbolene, og ble oppdatert til `s_tim1MainEnabled`/`s_tim8MainEnabled`.
+- **Build/Test result:** Ikke kjørt her. Brukerens lokale build rapporterte tidligere feil på disse symbolene.
+### Endring 2026-04-08 9
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Tok midlertidig `PB12`-knappen ut av motorstyringsflyten for å kunne verifisere PWM-signaler uten start/stopp-gating. `MotorCommutation_ProcessButton()` er deaktivert, og motorstyringen enable-es direkte i `MotorCommutation_Init()` slik at kommuteringen starter umiddelbart etter oppstart.
+- **Build/Test result:** Ikke kjørt her. Endringen er gjort for ren PWM-/logic-analyser-testing på target.
+### Endring 2026-04-08 10
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Satte motorstyringen tilbake til ren open-loop sektorsekvens på motor 1 uten hall-kommutering. `MOTOR_COMMUTATION_MODE` er nå `MOTOR1_SWEEP`, mens runtime allerede hopper over `HallStateFilter_Process()` utenfor hall-modus. Dette gir en ren test av sektorrekkefølgen `1..6` og PWM-gatingen uten hallavhengighet.
+- **Build/Test result:** Ikke kjørt her. Endringen er gjort for logic-analyser-testing på target.
+### Endring 2026-04-08 11
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Rettet en feil i den nye separate gating-logikken: `PWM_EnableMainChannel()` startet fortsatt både hovedutgangen (`CHx`) og komplementærutgangen (`CHxN`). Det undergravde hele skillet mellom `HIGH` og `LOW`, kunne gi samtidig aktivering av high/low på samme fase, og er en sannsynlig årsak både til feil signalbilde og oppstartsfeil etter de siste endringene.
+- **Build/Test result:** Ikke kjørt her. Endringen er en direkte korrigering av forrige PWM-omlegging.
+### Endring 2026-04-08 12
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Fjernet fase-map-laget midlertidig for ren PWM-verifikasjon. Open-loop-sekvensen kjøres nå direkte på fysiske kanaler i rekkefølgen `CH1 -> CH2 -> CH3` i stedet for via `UVW`-til-`CHx`-mapping. Dette gjør logic-analyser-testen entydig: hvis bare `CH1/CH1N` fortsatt beveger seg, ligger feilen ikke i fase-permutasjonen men i PWM-/timerstyringen eller måleoppsettet.
+- **Build/Test result:** Ikke kjørt her. Endringen er gjort for å isolere PWM-sekvensen.
+### Endring 2026-04-08 13
+- **Files changed:** Bachelor/Core/Src/pwm_control.c, Bachelor/log.md
+- **What/Why:** Rettet `PWM_PHASE_STATE_LOW` slik at komplementærutgangen `CHxN` får samme PWM-duty som hovedutgangen ville hatt, i stedet for `CCR=0`. For logic-analyser-testing betyr dette at low-side-kanalene på TIM1 (`CH1N/CH2N/CH3N`) faktisk skal vise pulser når en fase settes til `LOW`, mens hovedutgangen fortsatt holdes deaktivert.
+- **Build/Test result:** Ikke kjørt her. Endringen er gjort for videre verifikasjon av TIM1 low-side-signaler.
+### Endring 2026-04-08 14
+- **Files changed:** Bachelor/Core/Src/app_freertos.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/hall_state_filter.c, Bachelor/log.md
+- **What/Why:** Etter regenerering ble `defaultTask`-stacken økt tilbake til `512 * 4` for å tåle `printf`/newlib-reentrant-oppsettet. Samtidig ble motorstyringen satt tilbake til hall-modus kun for motor 1, med autostart og direkte sektorstyring uten sweep. `HallStateFilter_Process()` prosesserer nå bare `M1`, slik at Hall 2 ignoreres helt under videre testing.
+- **Build/Test result:** Ikke kjørt her. Endringen er gjort etter regenerering fra `.ioc`.
+### Endring 2026-04-08 15
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/hall_state_filter.c, Bachelor/log.md
+- **What/Why:** La tilbake hall-prosessering og kommutering for motor 2 slik at begge motorene kan kjøres samtidig med samme hall-baserte 6-step-oppsett. `MotorCommutation_Process()` kommuterer nå både `M1` og `M2`, og `HallStateFilter_Process()` prosesserer igjen begge motorene.
+- **Build/Test result:** Ikke kjørt her. Forutsetter at regenerert `.ioc` faktisk setter ønsket pull-up på Hall 2-inngangene i generert GPIO-oppsett.
+### Endring 2026-04-08 6
+- **Files changed:** Bachelor/Core/Inc/motor_commutation.h, Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** Strammet inn open-loop-testen slik at hall ikke leses i det hele tatt når motorstyringen står i sekvensmodus uten hall. `defaultTask` kaller nå bare `HallStateFilter_Process()` når kommuteringen faktisk er i hall-modus. Dette gjør testen til en ren elektrisk sektorsekvens `1..6` uten hallavhengighet eller ekstra hall-print under kjøring.
+- **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
