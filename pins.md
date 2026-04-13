@@ -19,9 +19,9 @@ All firmware agents must follow this mapping when generating code.
 
 | Signal   | Pin | Port  |
 | -------- | --- | ----- |
-| HALL_1_U | PC9 | GPIOC |
+| HALL_1_U | PC7 | GPIOC |
 | HALL_1_V | PC1 | GPIOC |
-| HALL_1_W | PC7 | GPIOC |
+| HALL_1_W | PC9 | GPIOC |
 | HALL_2_U | PC2 | GPIOC |
 | HALL_2_V | PC3 | GPIOC |
 | HALL_2_W | PC8 | GPIOC |
@@ -43,6 +43,8 @@ Hall-signaler skal leses som `UVW` i firmware. Dette matcher `hall_state_filter.
 | Signal      | Function           | Pin  | Port  |
 | ----------- | ------------------ | ---- | ----- |
 | MOTOR_START | Motor start/stop   | PB12 | GPIOB |
+| LCD_SCL     | Software I2C SCL   | PB7  | GPIOB |
+| LCD_SDA     | Software I2C SDA   | PB11 | GPIOB |
 
 | Signal | Pin  | Port  |
 | ------ | ---- | ----- |

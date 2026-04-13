@@ -19,6 +19,7 @@ typedef enum {
 
 void HallStateFilter_Init(void);
 void HallStateFilter_Process(void);
+void HallStateFilter_OnExti(uint16_t gpio_pin);
 uint8_t HallStateFilter_GetLatestState(HallStateFilter_MotorIndex motor_index,
                                        HallStateFilter_State *state);
 

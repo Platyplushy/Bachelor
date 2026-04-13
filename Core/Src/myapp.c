@@ -9,10 +9,12 @@
 #include "hall_debug.h"
 #include "hall_probe.h"
 #include "hall_state_filter.h"
+#include "joystick.h"
 #include "motor_commutation.h"
 #include "myprint.h"
 #include "pwm_control.h"
 #include "reset_diag.h"
+#include "rgb_lcd1602.h"
 #include "adc.h"
 #include "dma.h"
 #include "tim.h"
@@ -46,6 +48,13 @@ void App_Init(void) {
 
     MyPrint_Init();
     ResetDiag_PrintAndClear();
+    Joystick_Init();
+    RgbLcd1602_Init();
+    RgbLcd1602_Clear();
+    RgbLcd1602_SetCursor(0U, 0U);
+    RgbLcd1602_Print("STM32 Bachelor");
+    RgbLcd1602_SetCursor(0U, 1U);
+    RgbLcd1602_Print("Motor control");
     HallDebug_Init();
     HallProbe_Init();
     HallStateFilter_Init();

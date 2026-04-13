@@ -1,5 +1,6 @@
 #include "hall_debug.h"
 
+#include "hall_state_filter.h"
 #include "myprint.h"
 
 #define HALL_DEBUG_ENABLE_MOTOR2 0U
@@ -122,5 +123,6 @@ void HallDebug_OnExti(uint16_t gpio_pin)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+    HallStateFilter_OnExti(GPIO_Pin);
     HallDebug_OnExti(GPIO_Pin);
 }

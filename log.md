@@ -422,7 +422,236 @@ Alle fremtidige kodeendringer skal loggføres her med tidspunkt, filer, hva som 
 - **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/hall_state_filter.c, Bachelor/log.md
 - **What/Why:** La tilbake hall-prosessering og kommutering for motor 2 slik at begge motorene kan kjøres samtidig med samme hall-baserte 6-step-oppsett. `MotorCommutation_Process()` kommuterer nå både `M1` og `M2`, og `HallStateFilter_Process()` prosesserer igjen begge motorene.
 - **Build/Test result:** Ikke kjørt her. Forutsetter at regenerert `.ioc` faktisk setter ønsket pull-up på Hall 2-inngangene i generert GPIO-oppsett.
+### Endring 2026-04-09 1
+- **Files changed:** Bachelor/Core/Inc/soft_i2c.h, Bachelor/Core/Src/soft_i2c.c, Bachelor/Core/Inc/rgb_lcd1602.h, Bachelor/Core/Src/rgb_lcd1602.c, Bachelor/Core/Src/myapp.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** La til en minimal software-I2C-løsning for DFRobot RGB LCD1602 på `PB7` (`LCD_SCL`) og `PB3` (`LCD_SDA`). Implementerte en enkel STM32-driver for LCD-adresse `0x3E` og RGB-adresse `0x2D`, basert på DFRobot-bibliotekets init-sekvens. `App_Init()` initialiserer nå displayet og skriver en enkel oppstartstekst for verifikasjon.
+- **Build/Test result:** Ikke kjørt her. Endringen må bygges og testes på target sammen med LCD-modulen.
+### Endring 2026-04-09 2
+- **Files changed:** Bachelor/Core/Src/soft_i2c.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** Flyttet software-I2C `SDA` fra `PB3` til `PB11` for LCD-testen. Første forsøk med `PB7/PB3` ga strøm på displayet, men bare firkanter på første linje og ingen baklys, som tyder på at LCD ikke ble initialisert riktig. `PB7/PB11` gir to GPIO-er på samme port og et enklere testoppsett.
+- **Build/Test result:** Ikke kjørt her. Krever ny bygg/flash og omkobling av LCD `SDA`.
+### Endring 2026-04-09 3
+- **Files changed:** Bachelor/Core/Inc/joystick.h, Bachelor/Core/Src/joystick.c, Bachelor/Core/Src/myapp.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- **What/Why:** La til en første joystick-modul for én akse (`X` på `ADC1/PA0`) med enkel polling i `defaultTask`. Modulen skriver rå ADC-verdi til terminalen omtrent hver `50 ms` når verdien endrer seg, uten LCD-bruk eller skalering. Samtidig ble `UART alive` redusert fra `1 s` til `5 s` for å gjøre terminalutskriften roligere under joystick-testing.
+- **Build/Test result:** Ikke kjørt her. Endringen må bygges og testes på target.
+### Endring 2026-04-09 4
+- **Files changed:** Bachelor/Core/Inc/joystick.h, Bachelor/Core/Src/joystick.c, Bachelor/log.md
+- **What/Why:** Utvidet joystick-modulen med en enkel `speed_command` for X-aksen. Basert på observerte råverdier ble senter satt til ca. `1810`, med deadband `+-60`, og råverdien skaleres lineært til området `-100..100`. Terminal-print viser nå både råverdi og beregnet hastighetskommando.
+- **Build/Test result:** Ikke kjørt her. Må verifiseres på target mot faktisk joystick-utslag.
+### Endring 2026-04-09 5
+- **Files changed:** Bachelor/Core/Inc/joystick.h, Bachelor/Core/Src/joystick.c, Bachelor/log.md
+- **What/Why:** La til polling av den andre joystick-aksen (`Y` på `PA1/ADC1_IN2`) som ren råverdi. `Joystick_Process()` konfigurerer ADC1 sekvensielt for kanal 1 og kanal 2, og terminal-print viser nå `X raw`, `X speed` og `Y raw` samlet. Y-aksen er foreløpig ikke skalert, slik at råområde og sentrum kan observeres først.
+- **Build/Test result:** Ikke kjørt her. Må bygges og verifiseres på target.
+### Endring 2026-04-09 6
+- **Files changed:** Bachelor/Core/Src/joystick.c, Bachelor/log.md
+- **What/Why:** Reduserte joystick-printfrekvensen fra omtrent `20 Hz` til `5 Hz` ved å øke printintervallet fra `50 ms` til `200 ms`. Hensikten er å redusere UART-belastning og gjøre systemet mindre tregt under samtidig polling av to ADC-kanaler.
+- **Build/Test result:** Ikke kjørt her. Må bygges og verifiseres på target.
+### Endring 2026-04-09 7
+- **Files changed:** Bachelor/Core/Src/joystick.c, Bachelor/log.md
+- **What/Why:** Rettet ADC-pollingen for Y-aksen. Etter bytte til `ADC_CHANNEL_2` ble det tidligere kalt `HAL_ADC_PollForConversion()` uten en ny `HAL_ADC_Start()`, noe som ga timeout i hver loop og forklarer både treghet og manglende joystick-prints. Nå startes ADC1 eksplisitt på nytt før Y-konverteringen.
+- **Build/Test result:** Ikke kjørt her. Må bygges og verifiseres på target.
+### Endring 2026-04-09 8
+- **Files changed:** Bachelor/Core/Inc/joystick.h, Bachelor/Core/Src/joystick.c, Bachelor/log.md
+- **What/Why:** Implementerte enkel kjøremiksing for joystick: `Y` brukes som `drive_cmd`, `X` brukes som `turn_cmd`, og kommandoene mikses til `left = drive + turn` og `right = drive - turn` med clamp til `-100..100`. I tillegg detekteres joystick-knappen som en virtuell knapp når `X raw` går over `3800`; da beholdes siste gyldige `turn_cmd` låst mens `Y/drive` fortsatt oppdateres normalt.
+- **Build/Test result:** Ikke kjørt her. Må bygges og verifiseres på target.
+### Endring 2026-04-09 9
+- **Files changed:** Bachelor/Core/Src/joystick.c, Bachelor/log.md
+- **What/Why:** Økte deadband litt på `Y`-aksen (`+-80`) og la inn en liten nullsone på de ferdige `left/right`-kommandoene (`-4..4 -> 0`). Hensikten er å gjøre hvileposisjon roligere før kommandoene senere kobles videre til hjulhastighet/motorstyring.
+- **Build/Test result:** Ikke kjørt her. Må bygges og verifiseres på target.
+### Endring 2026-04-09 10
+- **Files changed:** Bachelor/Core/Inc/joystick.h, Bachelor/Core/Src/joystick.c, Bachelor/log.md
+- **What/Why:** La til et enkelt mellomlag som oversetter `left/right`-kommandoene til motorretning og duty i området `5 %..40 %`. `0` gir motor av, fortegn bestemmer `FWD/REV`, og absoluttverdien skaleres lineært til duty. Terminalutskriften viser nå `drive/turn`, `left/right` og avledet motorretning/duty for begge hjul.
+- **Build/Test result:** Ikke kjørt her. Må bygges og verifiseres på target.
 ### Endring 2026-04-08 6
 - **Files changed:** Bachelor/Core/Inc/motor_commutation.h, Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
 - **What/Why:** Strammet inn open-loop-testen slik at hall ikke leses i det hele tatt når motorstyringen står i sekvensmodus uten hall. `defaultTask` kaller nå bare `HallStateFilter_Process()` når kommuteringen faktisk er i hall-modus. Dette gjør testen til en ren elektrisk sektorsekvens `1..6` uten hallavhengighet eller ekstra hall-print under kjøring.
 - **Build/Test result:** Ikke kjørt. Lokal ARM-toolchain/make er ikke tilgjengelig i dette miljøet.
+
+2026-04-09 11
+- UART-terminal ryddet: fjernet dobbel COM1-init i main.c, normaliserer linjeskift i myprint.c og kaster RX-echo for � unng� rare tegn/linjeproblemer i PuTTY.
+
+2026-04-09 12
+- Forenklet joystick-terminalprint: fjernet float-formattering, prosenttegn og ekstra skilletegn for � isolere mulig UART/terminal-formatproblem.
+- Fjernet ledende tomlinje i MyPrint_Init og oppdatert oppstartsstreng til enkel ASCII.
+
+
+2026-04-09 13
+- Ny PCB: satt motorstyring tilbake til enkel M1-sweep-test med PB12 start/stopp.
+- MOTOR_COMMUTATION_MODE = MOTOR1_SWEEP, autostart fjernet, og PB12 satt til GPIO_PULLUP igjen i gpio.c slik at aktiv-lav knappelogikk matcher testen.
+
+
+2026-04-09 14
+- Hall state filter kj�res n� alltid i defaultTask, ogs� i M1 sweep-modus, slik at HALL-print kommer tilbake under motor-testing.
+
+
+2026-04-09 15
+- M1 sweep justert til 1000 ms per steg. Sweep-duty beholdt p� 5.0%.
+
+
+2026-04-09 16
+- Rettet PWM_PHASE_STATE_LOW i pwm_control.c: komplement�r lav-side settes n� med CCR=0 (statisk low-side ON via OCxN) i stedet for samme duty som high-side.
+- Dette matcher 6-step-kommutering bedre enn tidligere l�sning som PWM-et low-side med samme compareverdi.
+
+
+2026-04-09 17
+- Rullet tilbake LOW-fase-endringen i pwm_control.c etter at motorutgangene forsvant i praksis. Tilbake til forrige oppf�rsel med duty-basert compare ogs� for komplement�r lav-side.
+
+
+2026-04-09 18
+- Rettet M1 hall-mapping tilbake til U=PC7, V=PC1, W=PC9 i hall_state_filter.c, motor_commutation.c oppstartsprint og pins.md.
+
+
+2026-04-09 19
+- Satt tilbake til ren M1 open-loop sweep uten hall-avlesning i runtime. HallStateFilter_Process fjernet fra defaultTask for denne testen.
+- Sweep justert til 2000 ms per steg for sv�rt langsom sektorverifisering.
+
+
+2026-04-09 20
+- Open-loop M1 sweep endret til soft-start per sektor: duty resettes til 5.0% ved nytt steg og rampes til 15.0% med 0.5% hvert 100 ms innenfor 2 s sektorperiode.
+- PWM-b�rer redusert til ca 100 Hz ved � sette PWM_TIM1_COMMUTATION_PRESCALER=19 med eksisterende period=42499.
+
+
+2026-04-09 21
+- PWM-b�rer justert fra ca 100 Hz til ca 10 kHz ved � sette PWM_TIM1_COMMUTATION_PRESCALER=0 med period=42499.
+
+
+2026-04-09 22
+- M1 open-loop sweep g�r n� systematisk gjennom 12 kommuteringsvarianter: CH123/132/213/231/312/321, hver i b�de FWD og REV.
+- Hver variant kj�res i 6 steg f�r neste variant velges automatisk. Eksisterende 2 s per steg og 5->15% duty-ramp beholdt.
+
+
+2026-04-09 23
+- Byttet tilbake fra open-loop sweep til hall-basert kommutering p� M1 med direkte CH123-mapping (f�rste sweep-variant).
+- HallStateFilter_Process koblet tilbake inn i defaultTask n�r MotorCommutation_UsesHallInputs() er aktiv.
+- M2 holdes av i hall-testen for � isolere M1.
+
+
+2026-04-09 24
+- Hall-basert M1-test justert til ca 20 kHz PWM-b�rer ved period=4249, prescaler=0.
+- Soft-start endret til 0.0% -> 20.0% duty.
+
+
+2026-04-09 25
+- Rullet tilbake siste hall-test: PWM period tilbake til 42499 og soft-start tilbake til 5.0% -> 15.0%.
+
+
+2026-04-09 26
+- Hall-basert M1-test oppdatert til ca 20 kHz PWM-b�rer ved period=4249.
+- Soft-start m�l �kt til 25.0% duty.
+
+
+2026-04-09 27
+- Rettet korrupt assemblerlinje i startup_stm32g431rbtx.s: fjernet ekstra 'N' foran 'ldr r0, =_estack' i Reset_Handler.
+
+
+2026-04-09 28
+- Rullet PWM-b�rer tilbake til forrige frekvens ved period=42499. Hall soft-start til 25.0% duty beholdt.
+
+
+2026-04-09 29
+- �kte defaultTask stack fra 128*4 til 512*4 for � redusere risiko for reset under UART/hall/motor-kj�ring.
+- Slo av joystick-terminalprint midlertidig med JOYSTICK_ENABLE_PRINTS=0, men beholdt joystick-behandling i bakgrunnen.
+
+
+2026-04-09 30
+- Slo av runtime hall-print i hall_state_filter.c for � redusere UART-belastning under hall-basert motorstyring.
+
+
+2026-04-09 31
+- PWM-b�rer satt tilbake til ca 20 kHz ved period=4249. �vrig hall-konfigurasjon beholdt.
+
+
+2026-04-09 32
+- PWM-b�rer justert til ca 15 kHz ved period=5665. �vrig hall-konfigurasjon beholdt.
+
+
+2026-04-09 33
+- Hall-kjeden gjort mer interrupt-drevet: la til HallStateFilter_OnExti() og kaller den fra HAL_GPIO_EXTI_Callback().
+- Hall-pinner satt til GPIO_MODE_IT_RISING_FALLING i gpio.c.
+- Rettet EXTI15_10_IRQHandler i stm32g4xx_it.c til ogs� � h�ndtere Hall_1_W (PC7), Hall_2_W (PC8) og Hall_1_U (PC9), som tidligere ikke gikk gjennom HAL_GPIO_EXTI_IRQHandler().
+
+
+2026-04-09 34
+- PWM-b�rer satt til ca 10 kHz ved period=8499. EXTI-basert halloppdatering beholdt.
+
+
+2026-04-09 35
+- PWM-b�rer satt til ca 1 kHz ved period=84999. �vrig hall-konfigurasjon beholdt.
+
+
+2026-04-09 36
+- Byttet hall-kommutering til CH321-mapping i motor_commutation.c, basert p� loggsporet fra 2026-03-24 der UVW->CH321 var kandidat som ga rotasjon i open-loop.
+
+
+2026-04-09 37
+- Byttet fra hall-modus til M1 open-loop sweep med CH321-mapping for � teste samme fasevariant uten hall i kontrollsl�yfen.
+
+
+2026-04-09 38
+- Byttet sweep-varianten tilbake fra CH321 til CH123 for direkte sammenligning i open-loop uten hall.
+
+
+
+
+2026-04-09 39
+- Gjorde sweep-testen til en hybrid observasjonstest: HallStateFilter_Process() kjores na alltid i defaultTask ogsa nar motorstyringen star i sweep-modus.
+- Slo pa runtime hall-print igjen, men begrenset utskrift til M1 for a kunne sammenligne M1 hall-sekvens direkte mot sweep-stegene uten M2-stoy.
+
+
+
+2026-04-09 40
+- Rullet tilbake til ren hall-basert M1-test uten sweep: CH123, sector offset 5, invert polarity 0.
+- PWM-barer satt tilbake til ca 10 kHz (period=8499), soft-start fra 5 til 25 prosent duty beholdt.
+- Slo av runtime hall-print igjen for a teste ren drift uten UART-stoy.
+
+
+
+2026-04-09 41
+- PWM-barer justert til ca 15 kHz ved period=5665, mens hall-basert CH123 med offset 5 og invert polarity 0 ble beholdt uendret.
+
+
+
+2026-04-09 42
+- PWM-barer justert til ca 20 kHz ved period=4249, mens hall-basert CH123 med offset 5 og invert polarity 0 ble beholdt uendret.
+
+
+
+2026-04-13 1
+- Byttet hall-basert test fra M1 til M2 som isolert motorstest, slik at M1 holdes FLOAT mens M2 kommuteres med samme CH123/offset 5/invert 0-oppsett.
+- Start duty satt til 15 prosent for denne testvarianten. PWM-barer beholdt pa ca 20 kHz.
+
+
+
+2026-04-13 2
+- Slo pa runtime hall-print midlertidig kun for M2 for a verifisere at hall-filteret faktisk ser sektorendringer pa motor 2 under den isolerte M2-halltesten.
+
+
+
+2026-04-13 3
+- Rullet hall-basert isolert test tilbake fra M2 til M1 ved a sette aktiv hall-motor til M1 igjen. M2 holdes FLOAT for a komme tilbake til den kjente fungerende M1-varianten.
+
+
+
+2026-04-13 4
+- Slo pa runtime hall-print igjen kun for M1 for a feilsoke den nye hakkingen pa motor 1 mens M1 er aktiv hall-motor.
+
+
+
+2026-04-13 5
+- PWM-barer justert til ca 500 Hz som ren test mot den nye 5 V driverforsyningen, mens ovrig M1 hall-oppsett ble beholdt uendret.
+
+
+
+2026-04-13 6
+- PWM-barer justert til ca 100 Hz som ny frekvenstest for M1-halloppsettet med 5 V driverforsyning.
+
+
+
+2026-04-13 7
+- PWM-barer satt tilbake til ca 10 kHz etter reset-observasjon ved 100 Hz, for a sammenligne om resetten forsvinner med hoyere baerefrekvens.
+
+
+
+2026-04-13 8
+- PWM-barer satt tilbake til ca 20 kHz som referansefrekvens for videre M1-testing.
+

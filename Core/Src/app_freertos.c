@@ -28,6 +28,7 @@
 #include "hall_debug.h"
 #include "hall_probe.h"
 #include "hall_state_filter.h"
+#include "joystick.h"
 #include "motor_commutation.h"
 #include "myapp.h"
 #include "myprint.h"
@@ -59,7 +60,7 @@ osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .priority = (osPriority_t) osPriorityNormal,
-  .stack_size = 128 * 4
+  .stack_size = 512 * 4
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -127,19 +128,18 @@ void StartDefaultTask(void *argument)
   for(;;)
   {
     MyPrint_ProcessTerminal();
+    Joystick_Process();
 
 #if MOTOR_CONTROL_ENABLE_RAW_HALL_DEBUG
     HallDebug_Process();
     HallProbe_Process();
 #endif
 
-    if (MotorCommutation_UsesHallInputs() != 0U)
-    {
-      HallStateFilter_Process();
-    }
+    HallStateFilter_Process();
+
     MotorCommutation_Process();
 
-    if ((osKernelGetTickCount() - last_status_tick) >= 1000U)
+    if ((osKernelGetTickCount() - last_status_tick) >= 5000U)
     {
       last_status_tick = osKernelGetTickCount();
       MyPrint_Print("UART alive: RX=PA3 TX=PA2\r\n");

@@ -1,0 +1,65 @@
+[33mcommit 6dc7d0c7ef235f6e003d4640e8f5e03ac3d81bc4[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Mads-Johan Carron Markussen <mjmark18@uia.no>
+Date:   Thu Apr 9 11:40:59 2026 +0200
+
+    fungerende hall kommutering å begge hjul
+
+[33mcommit c65856130417aa1095523732cba92ae48fd89a5f[m
+Author: Mads-Johan Carron Markussen <mjmark18@uia.no>
+Date:   Tue Mar 24 13:59:49 2026 +0100
+
+    lagt inn kommuteringstabell med forsøk på forskjellige polariteter og startpunkt
+
+[33mcommit bfbe63c3c13d5985a500635c48da09984c548169[m
+Author: Mads Markussen <Madsmark@pm.me>
+Date:   Mon Mar 23 23:05:26 2026 +0100
+
+    la til flytskjema
+
+[33mcommit 0ed5499902c16c926e0a5be2dcd3e68cdd9d228f[m
+Author: Mads-Johan Carron Markussen <mjmark18@uia.no>
+Date:   Mon Mar 23 20:02:31 2026 +0100
+
+    innføring av hall lesing, kommuteringstabell og 20khz frekvens med 25% duty cycle
+
+[33mcommit dc5a562f2e86a2d9f7e7274f92bb25cbcc592b17[m
+Author: Andre Moller <andremo@uia.no>
+Date:   Fri Mar 20 16:02:11 2026 +0100
+
+    forsøkt med 10 hz frekvens, oppnådd rotasjon
+
+[33mcommit 52acccf8509507e71d2f4d8e76abb90731322638[m
+Author: Andre Moller <andremo@uia.no>
+Date:   Fri Mar 20 12:30:51 2026 +0100
+
+    endring av duty cycle
+
+[33mcommit da89c09fd2c2a34ce3824e8107f1607e865a99df[m
+Author: Andre Moller <andremo@uia.no>
+Date:   Wed Mar 18 16:09:33 2026 +0100
+
+    codex endringer på pwm
+
+[33mcommit 5cd06823818a0b04ceabca41f0de71c77998e8f4[m
+Author: Mads-Johan Carron Markussen <mjmark18@uia.no>
+Date:   Tue Mar 17 19:11:47 2026 +0100
+
+    Apply gitignore
+
+[33mcommit ecb8989d5c410e6a3d0d092459444054c54c05cd[m
+Author: Mads Markussen <Madsmark@pm.me>
+Date:   Tue Mar 17 12:57:15 2026 +0100
+
+    Fjerner unødvendige .deb filer
+
+[33mcommit b170b8bd00c7d4d928c0ece4bad2cb38051a525c[m
+Author: Mads Markussen <Madsmark@pm.me>
+Date:   Tue Mar 17 12:51:09 2026 +0100
+
+    Pwm hardkode
+
+[33mcommit a8ef5d86cd569aff8e382ea9dca7360554715d32[m
+Author: Mads Markussen <Madsmark@pm.me>
+Date:   Mon Mar 2 18:02:37 2026 +0100
+
+    Initial commit - STM32CubeIDE project
