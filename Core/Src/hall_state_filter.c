@@ -1,11 +1,13 @@
 #include "hall_state_filter.h"
 
+#include "motor_commutation.h"
 #include "myprint.h"
 
 #define HALL_FILTER_SAMPLE_PERIOD_MS      0U
 #define HALL_FILTER_STABLE_COUNT          1U
 #define HALL_FILTER_INVALID_CODE          0xFFU
 #define HALL_FILTER_ENABLE_RUNTIME_PRINTS 0U
+#define HALL_FILTER_MIN_TRANSITION_MS     0U
 
 typedef struct {
     uint8_t hall_code;
@@ -28,6 +30,8 @@ typedef struct {
     uint8_t candidate_hall_code;
     uint8_t candidate_stable_count;
     uint32_t last_sample_tick;
+    uint32_t last_accept_tick;
+    uint32_t transition_sequence;
 } HallFilter_Runtime;
 
 static const HallCodeSectorMap kHallSequence[] = {
@@ -114,7 +118,14 @@ static uint8_t HallStateFilter_FillState(uint8_t hall_code, HallStateFilter_Stat
     return 1U;
 }
 
-static void HallStateFilter_AcceptState(HallStateFilter_MotorIndex motor_index, uint8_t hall_code)
+static uint32_t HallStateFilter_GetCycleCounter(void)
+{
+    return DWT->CYCCNT;
+}
+
+static void HallStateFilter_AcceptState(HallStateFilter_MotorIndex motor_index,
+                                        uint8_t hall_code,
+                                        uint32_t transition_tick_ms)
 {
     HallStateFilter_State state;
     HallFilter_Runtime *runtime = &s_hallFilterRuntime[motor_index];
@@ -123,11 +134,17 @@ static void HallStateFilter_AcceptState(HallStateFilter_MotorIndex motor_index, 
         return;
     }
 
+    runtime->transition_sequence++;
+    state.transition_cycles = HallStateFilter_GetCycleCounter();
+    state.transition_tick_ms = transition_tick_ms;
+    state.transition_sequence = runtime->transition_sequence;
+
     runtime->latest_state = state;
     runtime->has_latest_state = 1U;
+    MotorCommutation_OnHallStateAccepted(motor_index, &state);
 
 #if HALL_FILTER_ENABLE_RUNTIME_PRINTS
-    if (motor_index == HALL_STATE_FILTER_MOTOR_1) {
+    if (motor_index == HALL_STATE_FILTER_MOTOR_2) {
         MyPrint_Printf("HALL %s: sector=%u UVW=%u%u%u code=0x%X\r\n",
                        kHallFilterMotorPins[motor_index].name,
                        state.sector,
@@ -142,6 +159,7 @@ static void HallStateFilter_AcceptState(HallStateFilter_MotorIndex motor_index, 
 static void HallStateFilter_TryAcceptState(HallStateFilter_MotorIndex motor_index, uint8_t hall_code)
 {
     HallFilter_Runtime *runtime = &s_hallFilterRuntime[motor_index];
+    const uint32_t now = HAL_GetTick();
 
     if (HallStateFilter_FindSequenceIndex(hall_code) == HALL_FILTER_INVALID_CODE) {
         runtime->candidate_hall_code = HALL_FILTER_INVALID_CODE;
@@ -154,13 +172,19 @@ static void HallStateFilter_TryAcceptState(HallStateFilter_MotorIndex motor_inde
     }
 
     if ((runtime->has_latest_state != 0U) &&
+        ((now - runtime->last_accept_tick) < HALL_FILTER_MIN_TRANSITION_MS)) {
+        return;
+    }
+
+    if ((runtime->has_latest_state != 0U) &&
         (HallStateFilter_IsAdjacent(runtime->latest_state.hall_code, hall_code) == 0U)) {
         return;
     }
 
     runtime->candidate_hall_code = hall_code;
     runtime->candidate_stable_count = HALL_FILTER_STABLE_COUNT;
-    HallStateFilter_AcceptState(motor_index, hall_code);
+    HallStateFilter_AcceptState(motor_index, hall_code, now);
+    runtime->last_accept_tick = now;
 }
 
 static void HallStateFilter_ProcessMotor(HallStateFilter_MotorIndex motor_index, uint32_t now)
@@ -203,6 +227,8 @@ void HallStateFilter_Init(void)
         s_hallFilterRuntime[i].candidate_hall_code = HALL_FILTER_INVALID_CODE;
         s_hallFilterRuntime[i].candidate_stable_count = 0U;
         s_hallFilterRuntime[i].last_sample_tick = now;
+        s_hallFilterRuntime[i].last_accept_tick = 0U;
+        s_hallFilterRuntime[i].transition_sequence = 0U;
     }
     MyPrint_Print("Hall state filter ready: M1=PC7/PC1/PC9 M2=PC2/PC3/PC8\r\n");
 }
@@ -238,12 +264,41 @@ void HallStateFilter_OnExti(uint16_t gpio_pin)
 uint8_t HallStateFilter_GetLatestState(HallStateFilter_MotorIndex motor_index,
                                        HallStateFilter_State *state)
 {
+    uint8_t has_state;
+
     if ((motor_index >= HALL_STATE_FILTER_MOTOR_COUNT) ||
-        (state == NULL) ||
-        (s_hallFilterRuntime[motor_index].has_latest_state == 0U)) {
+        (state == NULL)) {
         return 0U;
     }
 
-    *state = s_hallFilterRuntime[motor_index].latest_state;
+    __disable_irq();
+    has_state = s_hallFilterRuntime[motor_index].has_latest_state;
+    if (has_state != 0U) {
+        *state = s_hallFilterRuntime[motor_index].latest_state;
+    }
+    __enable_irq();
+
+    return has_state;
+}
+
+uint8_t HallStateFilter_GetCurrentState(HallStateFilter_MotorIndex motor_index,
+                                        HallStateFilter_State *state)
+{
+    uint8_t hall_code;
+
+    if ((motor_index >= HALL_STATE_FILTER_MOTOR_COUNT) ||
+        (state == NULL)) {
+        return 0U;
+    }
+
+    hall_code = HallStateFilter_ReadHallCode(motor_index);
+    if (HallStateFilter_FillState(hall_code, state) == 0U) {
+        return 0U;
+    }
+
+    state->transition_cycles = HallStateFilter_GetCycleCounter();
+    state->transition_tick_ms = HAL_GetTick();
+    state->transition_sequence = 0U;
+
     return 1U;
 }

@@ -63,7 +63,7 @@ void MX_GPIO_Init(void)
                            Hall_2_W_Pin Hall_1_U_Pin */
   GPIO_InitStruct.Pin = Hall_1_V_Pin|Hall_2_U_Pin|Hall_2_V_Pin|Hall_1_W_Pin
                           |Hall_2_W_Pin|Hall_1_U_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 

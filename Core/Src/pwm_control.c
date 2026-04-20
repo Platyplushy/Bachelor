@@ -343,37 +343,18 @@ static void PWM_Configure3PhaseComplementary(TIM_HandleTypeDef *htim, uint8_t *c
     __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, pulse);
     HAL_TIM_GenerateEvent(htim, TIM_EVENTSOURCE_UPDATE);
 
-    if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_1) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_2) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIM_PWM_Start(htim, TIM_CHANNEL_3) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIMEx_PWMN_Start(htim, TIM_CHANNEL_1) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIMEx_PWMN_Start(htim, TIM_CHANNEL_2) != HAL_OK) {
-        Error_Handler();
-    }
-    if (HAL_TIMEx_PWMN_Start(htim, TIM_CHANNEL_3) != HAL_OK) {
-        Error_Handler();
-    }
-
-    channel_enabled[0] = 1U;
-    channel_enabled[1] = 1U;
-    channel_enabled[2] = 1U;
+    channel_enabled[0] = 0U;
+    channel_enabled[1] = 0U;
+    channel_enabled[2] = 0U;
 
     if (htim->Instance == TIM1) {
-        s_tim1CompEnabled[0] = 1U;
-        s_tim1CompEnabled[1] = 1U;
-        s_tim1CompEnabled[2] = 1U;
+        s_tim1CompEnabled[0] = 0U;
+        s_tim1CompEnabled[1] = 0U;
+        s_tim1CompEnabled[2] = 0U;
     } else {
-        s_tim8CompEnabled[0] = 1U;
-        s_tim8CompEnabled[1] = 1U;
-        s_tim8CompEnabled[2] = 1U;
+        s_tim8CompEnabled[0] = 0U;
+        s_tim8CompEnabled[1] = 0U;
+        s_tim8CompEnabled[2] = 0U;
     }
 
     __HAL_TIM_MOE_ENABLE(htim);
@@ -453,6 +434,14 @@ static void PWM_SetAllChannels(TIM_HandleTypeDef *htim, float duty) {
 
 static void PWM_SetPhaseState(TIM_HandleTypeDef *htim, uint32_t channel, PWM_PhaseState state, float duty) {
     const uint32_t always_low_compare = 0U;
+    float clamped_duty = duty;
+
+    if (clamped_duty < 0.0f) {
+        clamped_duty = 0.0f;
+    }
+    if (clamped_duty > 100.0f) {
+        clamped_duty = 100.0f;
+    }
 
     switch (state) {
         case PWM_PHASE_STATE_FLOAT:
@@ -463,9 +452,9 @@ static void PWM_SetPhaseState(TIM_HandleTypeDef *htim, uint32_t channel, PWM_Pha
 
         case PWM_PHASE_STATE_HIGH:
             if (htim->Instance == TIM1) {
-                PWM_Set_DutyCycle(channel, duty);
+                PWM_Set_DutyCycle(channel, clamped_duty);
             } else {
-                uint32_t pulse = (uint32_t)(((float)(htim->Instance->ARR + 1) * duty) / 100.0f);
+                uint32_t pulse = (uint32_t)(((float)(htim->Instance->ARR + 1) * clamped_duty) / 100.0f);
                 __HAL_TIM_SET_COMPARE(htim, channel, pulse);
             }
             PWM_DisableCompChannel(htim, channel);
@@ -474,9 +463,9 @@ static void PWM_SetPhaseState(TIM_HandleTypeDef *htim, uint32_t channel, PWM_Pha
 
         case PWM_PHASE_STATE_LOW:
             if (htim->Instance == TIM1) {
-                PWM_Set_DutyCycle(channel, duty);
+                PWM_Set_DutyCycle(channel, clamped_duty);
             } else {
-                uint32_t pulse = (uint32_t)(((float)(htim->Instance->ARR + 1) * duty) / 100.0f);
+                uint32_t pulse = (uint32_t)(((float)(htim->Instance->ARR + 1) * clamped_duty) / 100.0f);
                 __HAL_TIM_SET_COMPARE(htim, channel, pulse);
             }
             PWM_DisableMainChannel(htim, channel);

@@ -45,6 +45,7 @@ Hall-signaler skal leses som `UVW` i firmware. Dette matcher `hall_state_filter.
 | MOTOR_START | Motor start/stop   | PB12 | GPIOB |
 | LCD_SCL     | Software I2C SCL   | PB7  | GPIOB |
 | LCD_SDA     | Software I2C SDA   | PB11 | GPIOB |
+| BLINK_LED   | Blink task output  | PB10 | GPIOB |
 
 | Signal | Pin  | Port  |
 | ------ | ---- | ----- |

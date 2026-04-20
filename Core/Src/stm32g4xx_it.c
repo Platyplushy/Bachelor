@@ -22,6 +22,7 @@
 #include "stm32g4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "hardfault_diag.h"
 #include "pwm_control.h"
 /* USER CODE END Includes */
 
@@ -89,7 +90,7 @@ void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
   __disable_irq();
-  NVIC_SystemReset();
+  HardFaultDiag_Handle();
 
   /* USER CODE END HardFault_IRQn 0 */
   while (1)
@@ -256,9 +257,6 @@ void EXTI15_10_IRQHandler(void)
   /* USER CODE BEGIN EXTI15_10_IRQn 0 */
 
   /* USER CODE END EXTI15_10_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(Hall_1_W_Pin);
-  HAL_GPIO_EXTI_IRQHandler(Hall_2_W_Pin);
-  HAL_GPIO_EXTI_IRQHandler(Hall_1_U_Pin);
   HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_11);
   BSP_PB_IRQHandler(BUTTON_USER);
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */

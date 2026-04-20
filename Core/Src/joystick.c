@@ -1,23 +1,27 @@
 #include "joystick.h"
 
 #include "adc.h"
+#include "motor_commutation.h"
 #include "myprint.h"
 
-#define JOYSTICK_X_CENTER          1810U
+#define JOYSTICK_X_CENTER          1890U
 #define JOYSTICK_X_DEADBAND        60U
-#define JOYSTICK_X_MIN_RAW         840U
-#define JOYSTICK_X_MAX_RAW         2870U
-#define JOYSTICK_Y_CENTER          1880U
+#define JOYSTICK_X_MIN_RAW         850U
+#define JOYSTICK_X_MAX_RAW         3075U
+#define JOYSTICK_Y_CENTER          1840U
 #define JOYSTICK_Y_DEADBAND        80U
-#define JOYSTICK_Y_MIN_RAW         900U
-#define JOYSTICK_Y_MAX_RAW         2920U
+#define JOYSTICK_Y_MIN_RAW         870U
+#define JOYSTICK_Y_MAX_RAW         2885U
 #define JOYSTICK_BUTTON_THRESHOLD  3800U
+#define JOYSTICK_BUTTON_DEBOUNCE_MS 30U
 #define JOYSTICK_OUTPUT_DEADBAND   4
 #define JOYSTICK_DUTY_MIN_PERCENT  5.0f
 #define JOYSTICK_DUTY_MAX_PERCENT  40.0f
+#define JOYSTICK_POLL_INTERVAL_MS  50U
 #define JOYSTICK_PRINT_INTERVAL_MS 200U
 #define JOYSTICK_MIN_CHANGE        4U
 #define JOYSTICK_ENABLE_PRINTS     0U
+#define JOYSTICK_RAW_ADC_ONLY      0U
 
 static uint16_t s_joystickRawX = 0U;
 static uint16_t s_joystickRawY = 0U;
@@ -32,7 +36,11 @@ static int16_t s_joystickRightCommand = 0;
 static Joystick_MotorCommand s_leftMotorCommand = {0U, 1U, 0.0f};
 static Joystick_MotorCommand s_rightMotorCommand = {0U, 1U, 0.0f};
 static uint8_t s_joystickButtonActive = 0U;
+static uint8_t s_joystickButtonStable = 0U;
+static uint8_t s_joystickButtonLastRaw = 0U;
+static uint32_t s_joystickButtonLastChangeTick = 0U;
 static uint8_t s_joystickHasPrint = 0U;
+static uint32_t s_joystickLastPollTick = 0U;
 static uint32_t s_joystickLastPrintTick = 0U;
 
 static int16_t Joystick_Clamp100(int32_t value)
@@ -83,6 +91,7 @@ static int16_t Joystick_ComputeAxisCommand(uint16_t raw_value,
     return (int16_t)(-Joystick_Clamp100(command));
 }
 
+#if JOYSTICK_RAW_ADC_ONLY == 0U
 static void Joystick_UpdateMixedCommands(void)
 {
     int32_t left;
@@ -131,6 +140,7 @@ static Joystick_MotorCommand Joystick_ComputeMotorCommand(int16_t command)
 
     return motor_command;
 }
+#endif
 
 void Joystick_Init(void)
 {
@@ -151,7 +161,11 @@ void Joystick_Init(void)
     s_rightMotorCommand.forward = 1U;
     s_rightMotorCommand.duty_percent = 0.0f;
     s_joystickButtonActive = 0U;
+    s_joystickButtonStable = 0U;
+    s_joystickButtonLastRaw = 0U;
+    s_joystickButtonLastChangeTick = HAL_GetTick();
     s_joystickHasPrint = 0U;
+    s_joystickLastPollTick = HAL_GetTick();
     s_joystickLastPrintTick = HAL_GetTick();
 }
 
@@ -160,6 +174,12 @@ void Joystick_Process(void)
     uint32_t now;
     uint16_t delta_x;
     uint16_t delta_y;
+
+    now = HAL_GetTick();
+    if ((now - s_joystickLastPollTick) < JOYSTICK_POLL_INTERVAL_MS) {
+        return;
+    }
+    s_joystickLastPollTick = now;
 
     if (HAL_ADC_Start(&hadc1) != HAL_OK) {
         return;
@@ -171,11 +191,11 @@ void Joystick_Process(void)
     }
 
     s_joystickRawX = (uint16_t)HAL_ADC_GetValue(&hadc1);
-    s_joystickSpeedCommandX = Joystick_ComputeAxisCommand(s_joystickRawX,
-                                                          JOYSTICK_X_CENTER,
-                                                          JOYSTICK_X_DEADBAND,
-                                                          JOYSTICK_X_MIN_RAW,
-                                                          JOYSTICK_X_MAX_RAW);
+    s_joystickDriveCommand = Joystick_ComputeAxisCommand(s_joystickRawX,
+                                                         JOYSTICK_Y_CENTER,
+                                                         JOYSTICK_Y_DEADBAND,
+                                                         JOYSTICK_Y_MIN_RAW,
+                                                         JOYSTICK_Y_MAX_RAW);
 
     if (HAL_ADC_ConfigChannel(&hadc1, &(ADC_ChannelConfTypeDef){
             .Channel = ADC_CHANNEL_2,
@@ -210,12 +230,25 @@ void Joystick_Process(void)
             .Offset = 0
         });
 
-    s_joystickButtonActive = (s_joystickRawX >= JOYSTICK_BUTTON_THRESHOLD) ? 1U : 0U;
-    s_joystickDriveCommand = Joystick_ComputeAxisCommand(s_joystickRawY,
-                                                         JOYSTICK_Y_CENTER,
-                                                         JOYSTICK_Y_DEADBAND,
-                                                         JOYSTICK_Y_MIN_RAW,
-                                                         JOYSTICK_Y_MAX_RAW);
+    s_joystickButtonActive = (s_joystickRawY >= JOYSTICK_BUTTON_THRESHOLD) ? 1U : 0U;
+    if (s_joystickButtonActive != s_joystickButtonLastRaw) {
+        s_joystickButtonLastRaw = s_joystickButtonActive;
+        s_joystickButtonLastChangeTick = now;
+    }
+
+    if (((now - s_joystickButtonLastChangeTick) >= JOYSTICK_BUTTON_DEBOUNCE_MS) &&
+        (s_joystickButtonActive != s_joystickButtonStable)) {
+        s_joystickButtonStable = s_joystickButtonActive;
+        if (s_joystickButtonStable != 0U) {
+            MotorCommutation_ToggleEnabled();
+        }
+    }
+
+    s_joystickSpeedCommandX = Joystick_ComputeAxisCommand(s_joystickRawY,
+                                                          JOYSTICK_X_CENTER,
+                                                          JOYSTICK_X_DEADBAND,
+                                                          JOYSTICK_X_MIN_RAW,
+                                                          JOYSTICK_X_MAX_RAW);
 
     if (s_joystickButtonActive == 0U) {
         s_joystickTurnCommand = s_joystickSpeedCommandX;
@@ -224,11 +257,25 @@ void Joystick_Process(void)
         s_joystickTurnCommand = s_joystickLatchedTurnCommand;
     }
 
+#if JOYSTICK_RAW_ADC_ONLY
+    s_joystickDriveCommand = 0;
+    s_joystickTurnCommand = 0;
+    s_joystickLeftCommand = 0;
+    s_joystickRightCommand = 0;
+    s_leftMotorCommand.enabled = 0U;
+    s_leftMotorCommand.forward = 1U;
+    s_leftMotorCommand.duty_percent = 0.0f;
+    s_rightMotorCommand.enabled = 0U;
+    s_rightMotorCommand.forward = 1U;
+    s_rightMotorCommand.duty_percent = 0.0f;
+    MotorCommutation_SetWheelCommands(0, 0);
+#else
     Joystick_UpdateMixedCommands();
     s_leftMotorCommand = Joystick_ComputeMotorCommand(s_joystickLeftCommand);
     s_rightMotorCommand = Joystick_ComputeMotorCommand(s_joystickRightCommand);
+    MotorCommutation_SetWheelCommands(s_joystickLeftCommand, s_joystickRightCommand);
+#endif
 
-    now = HAL_GetTick();
     if ((now - s_joystickLastPrintTick) < JOYSTICK_PRINT_INTERVAL_MS) {
         return;
     }
@@ -253,6 +300,12 @@ void Joystick_Process(void)
     s_joystickLastPrintedY = s_joystickRawY;
     s_joystickHasPrint = 1U;
 
+#if JOYSTICK_RAW_ADC_ONLY
+    MyPrint_Printf("JOY raw: X=%u Y=%u btn=%u\r\n",
+                   (unsigned)s_joystickRawX,
+                   (unsigned)s_joystickRawY,
+                   (unsigned)s_joystickButtonActive);
+#else
     MyPrint_Printf("JOY turn=%d drive=%d left=%d %s %d right=%d %s %d btn=%u\r\n",
                    (int)s_joystickTurnCommand,
                    (int)s_joystickDriveCommand,
@@ -263,6 +316,7 @@ void Joystick_Process(void)
                    s_rightMotorCommand.enabled ? (s_rightMotorCommand.forward ? "FWD" : "REV") : "OFF",
                    (int)(s_rightMotorCommand.duty_percent + 0.5f),
                    (unsigned)s_joystickButtonActive);
+#endif
 #else
     (void)now;
     (void)delta_x;

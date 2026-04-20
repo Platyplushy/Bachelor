@@ -655,3 +655,257 @@ Alle fremtidige kodeendringer skal loggfÃ¸res her med tidspunkt, filer, hva som 
 2026-04-13 8
 - PWM-barer satt tilbake til ca 20 kHz som referansefrekvens for videre M1-testing.
 
+
+
+2026-04-14 1
+- Slo pa runtime hall-print igjen kun for M1 og la hall-basert M1-test pa flat ca 20 prosent duty ved a sette default og target duty likt til 20 prosent.
+
+
+
+2026-04-14 2
+- Byttet fra isolert M1-halltest tilbake til dobbelmotor hall-drift der bade M1 og M2 kommuteres samtidig.
+- Slo av runtime hall-print igjen og satte soft-start til 15 prosent duty med ramp til 40 prosent duty.
+
+
+
+2026-04-14 3
+- Oppdaterte agents.md med krav om at brukte prompts skal loggfores i log.md for rapporten, sammen med en veldig kort beskrivelse av hva svaret/resultatet var.
+
+
+
+2026-04-14 4
+- Endret HardFault_Handler til diagnostikkmodus ved a fjerne NVIC_SystemReset() og lagre HFSR/CFSR/MMFAR/BFAR i volatile globale variabler, slik at hard faults ikke lenger rebooter MCU umiddelbart.
+
+
+
+2026-04-14 5
+- Oppdaterte agents.md med regel om at STM32Cube/ST-genererte systemfiler skal behandles som hellige og ikke endres uten eksplisitt brukerbeskjed. Utvidelser skal fortrinnsvis legges i egne prosjektfiler og kalles fra eksisterende hooks.
+
+
+
+2026-04-14 6
+- Flyttet hardfault-diagnostikken ut av stm32g4xx_it.c til egne filer hardfault_diag.c/.h. Systemfila gjor na bare et enkelt kall til HardFaultDiag_Capture() i USER CODE-blokken.
+- Oppdaterte agents.md med presisering om at kun sma kallsteder i USER CODE-blokker er akseptable i Cube/ST-systemfiler, ikke nye funksjonsimplementasjoner.
+- Flyttet blink-taskens LED-utgang til PB10 og dokumenterte dette som BLINK_LED i pins.md.
+
+
+
+2026-04-14 7
+- La inn rolig stopp pa PB12: ved stoppetrykk starter motorstyringen na en nedramping i motor_commutation.c i stedet for a kutte utgangene momentant.
+- Stopprampen reduserer duty i steg pa 6 prosent hvert 50 ms, som gir omtrent 60 til 0 prosent pa rundt et halvt sekund for begge motorer samtidig.
+
+
+
+2026-04-14 8
+- Endret hardfault-diagnostikken til a fange fault-registerne i hardfault_diag.c og deretter resette MCU igjen, slik at systemet ikke blir hengende permanent i HardFault_Handler ved oppstart.
+
+
+
+2026-04-14 9
+- Forenklet oppstartsprinten i MotorCommutation_Init() ved a fjerne float-formattering og splitte infoen i to enkle linjer, for a isolere om oppstartsfeilen kommer fra printf-formattering eller fra selve motoriniten.
+
+
+
+2026-04-14 10
+- Rullet midlertidig ut igjen soft motor stop fra motor_commutation.c for a verifisere om oppstartsproblemene faktisk hang sammen med stopplogikken.
+- Forenklet samtidig enable-printen til heltall uten float-formattering i samme kodebane.
+
+
+
+2026-04-14 11
+- Slo av PB10-blink midlertidig i blink_task.c for a isolere om den nye blinkutgangen eller init av PB10 bidrar til MCU-heng/reset.
+
+
+
+2026-04-14 12
+- La inn oppstartsblokkering pa PB12 i motor_commutation.c: knappelogikken ignoreres na de forste 500 ms etter boot for a hindre uonsket autostart hvis pinnen ligger lav eller ustabil ved oppstart.
+
+
+
+2026-04-14 13
+- La inn enkel rpm-basert feedforward i motor_commutation.c for en forste hastighetstest: bruker referansepunktet 220 rpm = 7 km/t til a sette target duty for 3 km/t.
+- Dette gir ca 94 rpm som mal og omtrent 34 prosent target duty, med myk opptrapping fra 15 prosent start-duty.
+
+
+
+2026-04-14 14
+- Byttet fra ren rpm-basert feedforward til en enkel lukket rpm-sløyfe i motor_commutation.c. Hall-overganger maales na med DWT cycle counter, rpm estimeres fra 90 hall-overganger per hjulomdreining, og duty justeres mykt mot malet for 3 km/t.
+- Duty er begrenset til maks 60 prosent, med et base-duty fra referansepunktet 220 rpm = 7 km/t og en enkel P-korreksjon hvis faktisk rpm faller under malet.
+
+
+
+2026-04-14 15
+- Gjorde rpm-reguleringen mer responsiv ved a korte ned kontrollintervallet fra 100 ms til 50 ms og oke duty-slew fra 1 til 2 prosent per reguleringssteg.
+
+
+
+2026-04-14 16
+- Okte P-forsterkningen i rpm-regulatoren fra 0.25 til 0.40 for a gjore duty mer folsom for sma rpm-avvik under moderat belastning, ikke bare ved nesten full blokkering av hjulet.
+
+
+
+2026-04-14 17
+- La inn lokal retningsvending kun for M2 i hall-sektor-til-kommandosektor-mappingen, slik at M2 kan testes motsatt M1 uten a endre M1 sin fungerende kommutering.
+
+
+
+2026-04-14 18
+- Reparerte buildfeil ved a rette en korrupt instruksjon i startup_stm32g431rbtx.s (minimal systemfilreparasjon) og erstatte et hengende kall til den gamle MotorCommutation_ProcessSoftStart() med en lokal enkel sweep-ramp i motor_commutation.c.
+
+
+
+2026-04-14 19
+- Satt M1 midlertidig til FLOAT i MotorCommutation_Process() for a isolere M2-testing med dagens lokale M2-reverse-oppsett.
+
+
+
+2026-04-14 20
+- Slo pa runtime hall-print kun for M2 i hall_state_filter.c under den isolerte M2-testen, slik at sektorsekvensen kan sammenlignes direkte mot M2-drift og PWM-observasjoner.
+
+
+
+2026-04-14 21
+- Slo av runtime hall-print igjen etter den isolerte M2-observasjonstesten for a fortsette uten UART-stoy.
+
+
+
+2026-04-14 22
+- Ryddet opp i retningslogikken i motor_commutation.c: tok bort den gamle lokale m2rev-hacken og innforte en per-motor retningsmodell der revers betyr motsatt elektrisk advance-offset i stedet for speilvending av hele sektorsekvensen.
+- Satt bade M1 og M2 til forward som default, siden M2 faktisk gikk best i den tidligere ikke-reverserte varianten.
+
+
+
+2026-04-14 23
+- Byttet M2 til reverse i den nye per-motor retningsmodellen i motor_commutation.c, mens M1 ble beholdt i forward.
+
+
+
+2026-04-14 24
+- La M1 inn igjen i hall-stien slik at bade M1 og M2 kommuteres samtidig. M2 beholdes i reverse via den nye per-motor retningsmodellen.
+
+
+
+2026-04-14 25
+- Okte hastighetsmalet i rpm-regulatoren fra 3 km/t til 4 km/t ved a endre MOTOR_COMMUTATION_TARGET_SPEED_KMH i motor_commutation.c.
+
+
+
+2026-04-14 26
+- La til HallStateFilter_SeedInitialState() og kaller den na ved enable av motorstyringen, slik at hver motor kan fa en gyldig initial hall-sektor uten a vente pa første fysiske hall-overgang.
+
+
+
+2026-04-14 27
+- La inn en enkel minimumstid mellom aksepterte hall-overganger i hall_state_filter.c (1 ms) for a gjore EXTI-basert hall mindre sårbar for stoy/glitch ved oppstart og under drift.
+
+
+
+2026-04-14 28
+- Ryddet PWM-oppstart i pwm_control.c: timerne konfigureres fortsatt ved init, men CH1/2/3 og CH1N/2N/3N startes ikke lenger automatisk i PWM_Configure3PhaseComplementary(). Kanalene startes na forst nar kommuteringen eksplisitt ber om det.
+
+
+
+2026-04-14 29
+- La inn litt hoyere start-duty kun for M2 i motor_commutation.c: M2 seedes na med 20 prosent duty ved enable, mens M1 beholdes pa 15 prosent.
+
+
+
+2026-04-14 30
+- La inn en enkel M2-kompensasjon i rpm-regulatoren: desired duty for M2 far na et tillegg pa 8 prosentpoeng for a motvirke at M2 gikk omtrent 5 runder mens M1 gikk 6 ved samme malhastighet.
+
+
+
+2026-04-14 Summary
+- Fokus i dag var a stabilisere dobbelmotordrift, rydde opp i oppstartsoppforing, og begynne pa enkel rpm-basert duty-regulering.
+- En viktig observasjon var at mange av de tidligere rare PWM-problemene sannsynligvis kom av at alle PWM-kanaler ble startet automatisk i pwm_control.c ved init. Dette ble ryddet opp slik at kanalene na forst startes nar kommuteringen eksplisitt ber om det. Dette ga et renere signalbilde pa logic analyser.
+- Det ble ogsa klart at hakkingen vi sa tidligere hang sammen med at DRV8300D var matet med 5 V i stedet for 12 V. Etter at driverforsyningen ble satt riktig igjen, fungerte motor 1 bra pa hall-basert drift.
+- For M2 ble det gjort flere isolerte tester. Vi fant at motor 2 gikk riktig vei og med hoyt stromtrekk nar vi brukte riktig retning, men at den trengte litt hoyere start-duty enn M1 for a komme i gang lettere. Derfor ble M2 gitt en liten startboost.
+- Vi innforte en ordentlig per-motor retningsmodell i motor_commutation.c i stedet for den gamle lokale reverse-hacken. Dette gjorde det mulig a holde M1 i forward og sette M2 i reverse pa en ryddigere mate.
+- Vi sa at M2 i praksis gikk tregere enn M1, omtrent 5 runder mot 6 runder for M1 ved samme mal. Derfor la vi inn en enkel M2 duty-bias pa 8 prosentpoeng for a kompensere dette.
+- Vi gjorde en manuell hall-runde og fant at ett hjulomlop ga 90 hall-overganger, altsa 15 komplette 6-sektor-sykluser per mekanisk omdreining. Dette ga grunnlaget for rpm-regning.
+- Basert pa referansen 220 rpm = 7 km/t begynte vi pa en enkel rpm-basert duty-styring. Forst som ren feedforward mot 3 km/t, deretter som en enkel lukket slOyfe med hall-basert rpm-estimat og P-korreksjon. Reguleringen ble deretter tunet til a reagere raskere og mer tydelig ved belastning.
+- Det som fungerte godt i dag: motor 1 fungerte stabilt igjen med riktig driverforsyning, M2 ble til slutt fa til a ga riktig vei, og begge motorer kunne til slutt kjores samtidig med separate retningsvalg.
+- Det som ikke fungerte eller fortsatt er usikkert: M2 har fortsatt hatt mer sensitiv oppstart enn M1, vi sa et problem der systemet virket til a henge til en av motorene ble snurret manuelt, og det er fortsatt sannsynlig at oppstart i enkelte rotorposisjoner pa M2 ikke er helt robust ennA.
+- Vi eksperimenterte ogsa med hardfault-diagnostikk og med a skjerme PB12 ved oppstart for a unnga uonsket autostart. Disse endringene ble gjort for a isolere problemer, men hovedfunnene i dag handlet mer om PWM-oppstart, driverforsyning og M2-spesifikk drift enn om selve PB12-logikken.
+- Status ved dagens slutt: M1 og M2 kan kjores samtidig, M2 har egen revers-retning og ekstra duty-bias, og systemet har en enkel rpm-basert regulator som kan videreutvikles neste gang.
+
+
+2026-04-15 1
+- Rullet tilbake HallStateFilter_SeedInitialState(): fjernet API/implementasjon og kallet ved motor-enable for aa teste om systemet fortsatt er stabilt etter PWM-oppstartsfixen uten denne feilsokingsendringen.
+
+2026-04-15 2
+- Bekreftet BOR-reset under last, som peker paa spenningsfall/brownout heller enn software crash. Oekte regulatorens maks duty til 80% og la ekstra duty-clamp i PWM_SetPhaseState for aa sikre PWM-laget mot ugyldige duty-verdier.
+
+2026-04-15 3
+- Implementerte joystick til motorstyring: joystick left/right (-100..100) sendes til MotorCommutation_SetWheelCommands. Motorstyringen bruker per-motor target RPM og retning, mens hall/RPM-regulator fortsatt bestemmer duty. Ved stopp disables motoroutput, og ved retningsbytte resettes duty/timing til startnivaa for aa unngaa hard revers med hoey duty. Bygg verifisert OK med CubeIDE make/GCC.
+
+2026-04-15 4
+- Aktivert joystick/ADC-debugprints igjen med eksisterende 200 ms intervall, ca. 5 Hz, for aa observere ADC-verdier og miksede kommandoer under test. Bygg verifisert OK.
+
+2026-04-15 5
+- Satt joystick i midlertidig raa-ADC diagnosemodus: printer kun X/Y raw og button ca. 5 Hz, og sender 0/0 til motorstyringen slik at feil ADC-baseline ikke driver motorene under kalibrering. Bygg verifisert OK.
+
+2026-04-15 6
+- Oppdatert joystick etter ny ADC-observasjon: knapp detekteres naa paa raa Y-kanal, turn beregnes fra raa Y og drive fra raa X. Justerte forelopige center/min/max basert paa nye raa ADC-verdier. Raa-ADC diagnosemodus er fortsatt aktiv, saa motorstyringen faar fortsatt 0/0 under kalibrering. Bygg verifisert OK.
+
+2026-04-15 7
+- Skrudde av raa-ADC diagnosemodus og aktiverte vanlig joysticklogikk igjen: drive/turn, differensialmiks left/right og kommando til motorstyring. Beholder ny akselmapping og knappdeteksjon paa Y. Bygg verifisert OK.
+
+2026-04-15 8
+- Flyttet start/stopp-toggle fra PB12 til joystick-knappen. La til MotorCommutation_ToggleEnabled(), deaktiverte PB12-button path med compile-time switch, og la debounce/edge-detektering paa joystick-knappen slik ett trykk toggler motor enable. Bygg verifisert OK uten warnings.
+
+2026-04-15 9
+- La inn slew-rate og retningsbeskyttelse i motorstyringen. Joystick kan fortsatt sende raske -100..100 kommandoer, men MotorCommutation lagrer dette som requested_percent og slipper command_percent gradvis med maks 5 prosentpoeng per 50 ms. Hvis ny kommando har motsatt fortegn, rampes motoren foerst til 0 foer motsatt retning tillates. Bygg verifisert OK.
+
+2026-04-15 10
+- Gjorde joystick/motor-kommandorampen mykere: command slew redusert fra 5 til 2 prosentpoeng per 50 ms, ca. 2.5 sekunder fra 0 til 100, for aa redusere reset/stroemspikes ved raske paadragsendringer.
+
+2026-04-15 11
+- Redusert faktisk joystick/ADC-polling ved aa legge JOYSTICK_POLL_INTERVAL_MS=50 ms i Joystick_Process. ADC-lesing og motor-kommandooppdatering skjer naa maks ca. 20 Hz, mens task-loopen fortsatt kan kjoere raskt.
+
+2026-04-15 12
+- Skrudde av joystick/ADC-prints igjen ved aa sette JOYSTICK_ENABLE_PRINTS=0. Beholder 50 ms polling og motorstyring via joystick.
+
+2026-04-15 13
+- Flyttet hall-filter og motor-kommutering ut av defaultTask og inn i egen hoeyprioritets motorControl-task i myapp.c. Tasken kjoerer HallStateFilter_Process og MotorCommutation_Process med 1 ms delay. DefaultTask kjoerer fortsatt UART/joystick/status, slik at ADC/prints/UI ikke blokkerer motorstyring paa samme prioritet. Joystick-knapp setter naa kun toggle-request; selve enable/disable haandteres i motor-tasken. Bygg verifisert OK.
+
+2026-04-15 14
+- Oekte stack-margin for aa teste om reset/hardfault kan skyldes stack-overflow: defaultTask fra 128 til 512 words og motorControl fra 256 til 512 words.
+
+2026-04-15 15
+- Oppstart hang etter stackoekning skyldtes sannsynligvis for liten FreeRTOS heap (configTOTAL_HEAP_SIZE=3072) til dynamisk allokerte task-stacker. Endret motorControl til statisk allokert TCB/stack i myapp.c og reduserte defaultTask til 256 words for aa gi heap-margin uten aa endre FreeRTOSConfig.h. Bygg verifisert OK.
+
+2026-04-15 16
+- Implementerte LCD-visning av hjulhastighet. La til read-only speed API i motor_commutation basert paa measured_rpm og 220 rpm = 7 km/t. defaultTask oppdaterer LCD med M1/M2 km/h hvert 500 ms, uten aa belaste motorControl-tasken.
+
+2026-04-15 17
+- Fikset linker-feil for LCD speed API: MotorCommutation_GetMotor1SpeedKmh og MotorCommutation_GetMotor2SpeedKmh var deklarert i header, men manglet i motor_commutation.c. La inn implementasjonene som beregner km/h fra measured_rpm.
+
+2026-04-15 18
+- Flyttet hastighetstimestamping til hall-interrupt/aksept i HallStateFilter. HallStateFilter_State har naa transition_cycles, transition_tick_ms og transition_sequence. MotorCommutation bruker disse interrupt-timestampene for RPM-beregning i stedet for aa timestamp-e naar motorControl-tasken prosesserer state. Selve PWM/regulator ligger fortsatt i motorControl-task, ikke i interrupt. Bygg verifisert OK.
+
+2026-04-17 1
+- Skudde av kun motor 1 midlertidig i motorstyringen for hardwaretest/hypotese. La inn per-motor enable-define i motor_commutation.c og satte MOTOR_COMMUTATION_ENABLE_MOTOR1=0, MOTOR_COMMUTATION_ENABLE_MOTOR2=1, slik at M1 outputs og kommando tvinges av mens M2 kjører som normalt.
+
+2026-04-17 2
+- Byttet isolasjonstesten slik at kun motor 1 er aktiv og motor 2 er tvunget av i motorstyringen. Satte MOTOR_COMMUTATION_ENABLE_MOTOR1=1 og MOTOR_COMMUTATION_ENABLE_MOTOR2=0 for aa teste motor 1 alene.
+2026-04-17 3
+- La inn en isolert revers-test for motor 1 i motor_commutation.c. Selve sektorlogikken ble ikke endret, men M1 i revers bruker naa samme start-duty (20%) og samme duty-bias (+5.3%) som M2 bruker. Hensikten er aa verifisere om restart-problemet paa M1 i revers skyldes for lavt startmoment / asymmetrisk dutyoppsett heller enn feil i revers-sektorformelen.
+2026-04-17 4
+- Endret M1-revers testen fra hoeyere moment til mykere oppstart. M1 i revers bruker naa 16% start-duty, ingen ekstra duty-bias og tregere RPM-duty-ramp (1% per reguleringssteg) for aa teste hypotesen om at motoren trenger en rolig innfasing i revers, siden den starter naar joystick bygges opp veldig sakte manuelt.
+2026-04-17 5
+- La inn egen sektor-offset per motor i motor_commutation.c. M1 bruker naa MOTOR_COMMUTATION_MOTOR1_SECTOR_OFFSET og M2 bruker MOTOR_COMMUTATION_MOTOR2_SECTOR_OFFSET, slik at vi kan teste M1-kommutering separat uten aa paavirke M2. Init-print viser naa begge offset-verdiene.
+2026-04-17 6
+- Generaliserte M1-kommuteringen til egne sektor-offsets for fremover og revers. M1 forward bruker naa offset 5 og M1 reverse bruker offset 2, basert paa lasttestene der offset 4 ga god revers men da flyttet problemet til fremover. M2 beholder eksisterende offsetlogikk. Init-print viser naa M1-fwd/M1-rev/M2 offset.
+2026-04-17 7
+- Flyttet selve sektoroppdateringen til hall-event path. HallStateFilter kaller naa MotorCommutation_OnHallStateAccepted() idet en gyldig hall-state aksepteres, og motorstyringen kommuterer umiddelbart i denne callbacken. Motor-tasken brukes fortsatt til joystick, enable-state, RPM-regulator og duty-endringer, men er ikke lenger avhengig av aa rekke hver eneste hall-overgang for aa holde korrekt sektor. Dette er ment aa hindre sektorhopp/lasing ved hoeyere duty og hastighet.
+2026-04-17 8
+- La inn oppstarts-priming fra aktuell hall-state. Ved overgang fra stopp til aktiv kommando leser MotorCommutation naa umiddelbart dagens hall-state via HallStateFilter_GetCurrentState() og legger ut korrekt sektor med en gang, slik at motoren ikke trenger aa vente paa foerste nye hall-interrupt foer den begynner aa kjoere. Normal interrupt-basert kommutering tar deretter over.
+2026-04-17 9
+- Generaliserte M2 til egne effektive sektor-offsets per retning, slik som M1. M2 reverse beholdes paa fungerende offset 5, mens M2 forward settes til offset 2 som foerste test siden symptomet lignet M1 sitt tidligere 'starter foerst ved et dytt'-problem. GetCommandSector bruker naa eksplisitte effektive offsets for baade M1 og M2 i stedet for symmetrisk speiling for M2.
+2026-04-17 10
+- Byttet LCD fra individuell M1/M2-hastighet til samlet vognhastighet. La til MotorCommutation_GetVehicleSpeedKmh() som beregner signert middelverdi av venstre og hoyre hjulhastighet basert paa per-motor measured_rpm og command_forward. LCD viser naa Speed xx.xkm/h paa foerste linje i stedet for separate hjulverdier.
+2026-04-17 11
+- Endret LCD-layout. Rad 1 viser naa kun fart og motorstatus: xx.xkm/t ON/OFF. Rad 2 er klargjort for thermistorer og viser forelopig placeholders: T1 --.- T2 --.- inntil temperaturmaaling er implementert. La ogsaa til MotorCommutation_IsEnabled() for aa kunne vise ON/OFF paa displayet.
+2026-04-17 12
+- La inn egen temperaturmodul for thermistorer paa PA6/PA7 (ADC2_IN3/ADC2_IN4) med 51k fast motstand til 3.3V og antatt NTC til GND. TemperaturSensor prosesserer ADC2 kanal 3 og 4 med lengre samplingtid, konverterer raadata til motstand og deretter temperatur med Beta-formelen for 50k/B3950, og filtrerer lett. LCD rad 2 viser naa T1 xx.x T2 yy.y ved gyldige maalinger. Midlertidig ble Debug buildfilene oppdatert for aa ta med temperature_sensor.c i make-listen.

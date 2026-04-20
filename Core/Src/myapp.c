@@ -15,14 +15,50 @@
 #include "pwm_control.h"
 #include "reset_diag.h"
 #include "rgb_lcd1602.h"
+#include "temperature_sensor.h"
 #include "adc.h"
 #include "dma.h"
 #include "tim.h"
 #include "gpio.h"
 #include "stm32g4xx_nucleo.h"
 #include "blink_task.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "cmsis_os.h"
 
 static COM_InitTypeDef BspCOMInit;
+
+#define MOTOR_CONTROL_TASK_STACK_WORDS 512U
+
+static osThreadId_t s_motorControlTaskHandle;
+static StaticTask_t s_motorControlTaskControlBlock;
+static StackType_t s_motorControlTaskStack[MOTOR_CONTROL_TASK_STACK_WORDS];
+
+static void MotorControlTask_Run(void *argument)
+{
+    (void)argument;
+
+    for (;;) {
+        HallStateFilter_Process();
+        MotorCommutation_Process();
+        osDelay(1U);
+    }
+}
+
+static void MotorControlTask_Init(void)
+{
+    const osThreadAttr_t motorControlTaskAttributes = {
+        .name = "motorControl",
+        .priority = (osPriority_t)osPriorityHigh,
+        .cb_mem = &s_motorControlTaskControlBlock,
+        .cb_size = sizeof(s_motorControlTaskControlBlock),
+        .stack_mem = s_motorControlTaskStack,
+        .stack_size = MOTOR_CONTROL_TASK_STACK_WORDS * 4U
+    };
+
+    s_motorControlTaskHandle = osThreadNew(MotorControlTask_Run, NULL, &motorControlTaskAttributes);
+    (void)s_motorControlTaskHandle;
+}
 
 void App_Init(void) {
     /* USER CODE BEGIN App_Init 1 */
@@ -59,6 +95,7 @@ void App_Init(void) {
     HallProbe_Init();
     HallStateFilter_Init();
     MotorCommutation_Init();
+    TemperatureSensor_Init();
 
     /* USER CODE BEGIN App_Init 2 */
     /* USER CODE END App_Init 2 */
@@ -66,6 +103,7 @@ void App_Init(void) {
 
 void App_StartTasks(void) {
     BlinkTask_Init();
+    MotorControlTask_Init();
 }
 
 void App_Run(void) {

@@ -9,6 +9,9 @@ typedef struct {
     uint8_t hall_w;
     uint8_t hall_code;
     uint8_t sector;
+    uint32_t transition_cycles;
+    uint32_t transition_tick_ms;
+    uint32_t transition_sequence;
 } HallStateFilter_State;
 
 typedef enum {
@@ -22,5 +25,7 @@ void HallStateFilter_Process(void);
 void HallStateFilter_OnExti(uint16_t gpio_pin);
 uint8_t HallStateFilter_GetLatestState(HallStateFilter_MotorIndex motor_index,
                                        HallStateFilter_State *state);
+uint8_t HallStateFilter_GetCurrentState(HallStateFilter_MotorIndex motor_index,
+                                        HallStateFilter_State *state);
 
 #endif /* INC_HALL_STATE_FILTER_H_ */
