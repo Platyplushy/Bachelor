@@ -9,6 +9,7 @@ void MotorCommutation_Process(void);
 void MotorCommutation_SetDuty(float duty_percent);
 void MotorCommutation_SetWheelCommands(int16_t motor1_percent, int16_t motor2_percent);
 void MotorCommutation_ToggleEnabled(void);
+void MotorCommutation_ForceStop(void);
 void MotorCommutation_OnHallStateAccepted(HallStateFilter_MotorIndex hall_index,
                                           const HallStateFilter_State *state);
 float MotorCommutation_GetMotor1SpeedKmh(void);

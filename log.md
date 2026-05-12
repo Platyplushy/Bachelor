@@ -909,3 +909,181 @@ Alle fremtidige kodeendringer skal loggfÃ¸res her med tidspunkt, filer, hva som 
 - Endret LCD-layout. Rad 1 viser naa kun fart og motorstatus: xx.xkm/t ON/OFF. Rad 2 er klargjort for thermistorer og viser forelopig placeholders: T1 --.- T2 --.- inntil temperaturmaaling er implementert. La ogsaa til MotorCommutation_IsEnabled() for aa kunne vise ON/OFF paa displayet.
 2026-04-17 12
 - La inn egen temperaturmodul for thermistorer paa PA6/PA7 (ADC2_IN3/ADC2_IN4) med 51k fast motstand til 3.3V og antatt NTC til GND. TemperaturSensor prosesserer ADC2 kanal 3 og 4 med lengre samplingtid, konverterer raadata til motstand og deretter temperatur med Beta-formelen for 50k/B3950, og filtrerer lett. LCD rad 2 viser naa T1 xx.x T2 yy.y ved gyldige maalinger. Midlertidig ble Debug buildfilene oppdatert for aa ta med temperature_sensor.c i make-listen.
+2026-05-06 1
+- Prompt brukt: "Jeg har lyst til aa implementere en motorstopp ut fra om temperaturen paa motoren(e) blir for hoy og vise en feilmelding paa displayet om dette skjer. Jeg har ogsaa lyst til aa vise motorstatus on/off helt til hoyre paa 1 linje paa displayet."
+- Resultat: Implementerte overtemperaturstopp basert paa eksisterende temperaturmaaling. app_freertos.c stopper motorene med MotorCommutation_ForceStop() naar M1 eller M2 naar 80 C, holder feilen aktiv til aktuell motor er nede paa 70 C, og viser TEMP FAULT M1, TEMP FAULT M2 eller TEMP FAULT M1+M2 paa LCD-linje 2. LCD-linje 1 viser fortsatt hastighet, men ON/OFF er naa hoyrejustert helt til hoyre.
+- Files changed: Bachelor/Core/Inc/motor_commutation.h, Bachelor/Core/Src/motor_commutation.c, Bachelor/Core/Src/app_freertos.c, Bachelor/log.md
+- Build/Test result: Bygg verifisert OK med CubeIDE make/GNU ARM toolchain fra C:\ST\STM32CubeIDE_1.16.0. Target-test ikke kjoert her.
+
+## 2026-05-06 2
+
+Prompt:
+"Ja, dette kan du implementere"
+
+Resultat:
+- Flyttet default task-logikk ut av Core/Src/app_freertos.c til Core/Src/app_default_task.c og Core/Inc/app_default_task.h.
+- Flyttet LCD-visning til Core/Src/lcd_status.c og Core/Inc/lcd_status.h.
+- Flyttet motor-temperatursikring til Core/Src/motor_temperature_safety.c og Core/Inc/motor_temperature_safety.h.
+- Core/Src/app_freertos.c inneholder naa kun en tynn StartDefaultTask-wrapper som kaller AppDefaultTask_Run().
+- Oppdaterte Debug/Core/Src/subdir.mk og Debug/objects.list slik at CLI-build inkluderer de nye kildefilene.
+- Build fullfoert OK. Gjenstaaende warnings er eksisterende/opprydding: unused BlinkTask_InitPin og unused always_low_compare.
+
+## 2026-05-06 3
+
+Prompt:
+"Veldig bra, kan du lage et nytt tekstdokument hvor du legger inn disse linje for linje kodeforklaringene?"
+
+Resultat:
+- Opprettet app_default_task_linjeforklaring.md med linje-for-linje forklaring av Core/Inc/app_default_task.h og Core/Src/app_default_task.c.
+- La inn en forenklet tekstflyt som kan brukes som grunnlag for flytskjema.
+
+## 2026-05-06 4
+
+Prompt:
+"Ok, bra. denne filen skal vaere et sammendrag av alle de forskjellige kodefilene saa gjerne gi den et mer generisk navn. Kan du gjoere det samme med hall_debug?"
+
+Resultat:
+- Omdopte dokumentasjonen fra app_default_task_linjeforklaring.md til kodeforklaringer_linje_for_linje.md.
+- Oppdaterte innledning slik at dokumentet fungerer som samlet kodeforklaring for flere prosjektfiler.
+- La til linje-for-linje forklaring av Core/Inc/hall_debug.h og Core/Src/hall_debug.c.
+- La til forenklet tekstflyt for hall_debug som grunnlag for flytskjema.
+
+## 2026-05-06 5
+
+Prompt:
+"Kan du gjoere det samme med hall probe?"
+
+Resultat:
+- La til linje-for-linje forklaring av Core/Inc/hall_probe.h og Core/Src/hall_probe.c i kodeforklaringer_linje_for_linje.md.
+- La til forenklet tekstflyt for hall_probe som grunnlag for flytskjema.
+
+## 2026-05-06 6
+
+Prompt:
+"Ok, gjoer det samme for hall state filter, hardfault diag, joystick, lcd status, motor commutation"
+
+Resultat:
+- La til forklaringer for Core/Inc og Core/Src for hall_state_filter, hardfault_diag, joystick, lcd_status og motor_commutation i kodeforklaringer_linje_for_linje.md.
+- hardfault_diag og lcd_status er forklart linje-for-linje.
+- Storre filer er forklart med detaljerte linjeomraader per kodeblokk/funksjon for aa holde dokumentet brukbart til flytskjema.
+- La til forenklet tekstflyt for hall_state_filter, joystick, lcd_status og motor_commutation.
+
+## 2026-05-06 7
+
+Prompt:
+"Saa ikke ut som det ble skrevet inn i filen, sikekrt fordi jeg hadde aapnet den, kan du skrive dem inn paa nytt?"
+
+Resultat:
+- Verifiserte at kodeforklaringer_linje_for_linje.md stoppet etter hall_probe og manglet seksjonene fra forrige forespoersel.
+- Skrev inn seksjonene paa nytt for hall_state_filter, hardfault_diag, joystick, lcd_status og motor_commutation.
+- Verifiserte paa disk at overskriftene finnes og at filen er oppdatert.
+
+## 2026-05-06 8
+
+Prompt:
+"Jeg ser at man ikke kan skrive aa,oe ae. Kan du skrive det i txt fil istedenfor for aa faa med disse karakterene?"
+
+Resultat:
+- Opprettet kodeforklaringer_linje_for_linje.txt fra markdown-dokumentet.
+- Skrev TXT-filen som UTF-8 uten BOM.
+- Konverterte aa/oe/ae til norske tegn i TXT-versjonen.
+- Verifiserte at TXT-filen inneholder faktiske Unicode-tegn for aa, oe og ae, og at alle moduloverskriftene fortsatt finnes.
+### Endring 2026-05-11
+- **Files changed:** Bachelor/kodeforklaringer_linje_for_linje.md, Bachelor/log.md
+- **What/Why:** Fortsatte linje-for-linje dokumentasjonen med `motor_temperature_safety`-modulen. La til forklaring av header, kildefil, temperaturgrenser, hysterese, feilflagg og motorstopp ved overtemperatur.
+- **Build/Test result:** Ikke kjort. Dokumentasjonsendring.
+### Endring 2026-05-11 2
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** Implementerte doedmannsknapp paa PB3 som aktiv-hoey inngang med intern pulldown. Naar PB3 holdes hoey i minst 20 ms aktiveres motorstyringen. Naar PB3 blir lav stoppes motorene umiddelbart, runtime-kommandoer nulles, joystick-toggle ignoreres, og PWM-utgangene settes til low-side bremsing hvis aktivert.
+- **Build/Test result:** Ikke kjort. `make` og `arm-none-eabi-gcc` er ikke tilgjengelig i denne shellen.
+### Endring 2026-05-11 3
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Satte PB3-doedmannsknappen paa vent ved aa deaktivere `MOTOR_COMMUTATION_ENABLE_DEADMAN_SWITCH`. Koden er beholdt, men kompileres ikke inn mens motorretning og motor 2-kommutering feilsokes.
+- **Build/Test result:** Ikke kjort. Bevisst liten compile-time endring.
+### Endring 2026-05-11 4
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/log.md
+- **What/Why:** Endret hall-filterets runtime-print slik at baade M1 og M2 printer akseptert hall-sektor og UVW-kode. Tidligere var printen eksplisitt begrenset til M2.
+- **Build/Test result:** Ikke kjort. Liten debug-print endring.
+### Endring 2026-05-11 5
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/log.md
+- **What/Why:** La til `HALL RAW`-prints for begge motorer ved endring i raa hallkode, foer gyldighetsfilteret. Dette skal vise om M1 leses som ugyldig kode, staar fast, eller faktisk endrer seg selv om akseptert `HALL M1` ikke kommer.
+- **Build/Test result:** Ikke kjort. Debug-print endring; `make`/ARM-toolchain er ikke tilgjengelig i shellen.
+### Endring 2026-05-11 6
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/log.md
+- **What/Why:** Fjernet midlertidige `HALL RAW`-prints og gikk tilbake til vanlig hall-print med sektor/UVW/kode. Printen styres av `HALL_FILTER_ENABLE_RUNTIME_PRINTS` og gjelder baade M1 og M2.
+- **Build/Test result:** Ikke kjort. Debug-print opprydding.
+### Endring 2026-05-11 7
+- **Files changed:** Bachelor/Core/Src/app_default_task.c, Bachelor/log.md
+- **What/Why:** Slo av kontinuerlige temperaturprints til UART ved aa legge dem bak `APP_DEFAULT_TASK_ENABLE_TEMPERATURE_PRINTS`, satt til `0U`. Temperaturmaaling, temperatursikkerhet og LCD-status kjoerer fortsatt.
+- **Build/Test result:** Ikke kjort. Liten debug-print endring.
+### Endring 2026-05-11 8
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Rettet oppstartslogikk i hall-basert kommutering. Naar motorene var enabled og joystick-kommandoen gikk fra 0 til aktiv, kunne utgangene bli vaerende av hvis hall-state allerede var kjent og det ikke kom en ny hall-overgang. `ProcessMotor` bruker naa siste gyldige hall-state til aa applisere foerste kommuteringssektor straks kommandoen blir aktiv.
+- **Build/Test result:** Ikke kjort. Lokal ARM-toolchain/make er ikke tilgjengelig i shellen.
+### Endring 2026-05-11 9
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** Rettet M1 hall-mapping fra `U=PC7, V=PC1, W=PC9` til `U=PC9, V=PC1, W=PC7`, i tråd med `main.h` og eksisterende hall-debugtekst. Feil U/W-mapping kan gi hakkete drift og behov for hjelp ved oppstart. Oppdaterte ogsaa oppstartsprint og pindokumentasjon.
+- **Build/Test result:** Ikke kjort. Testes paa hardware.
+### Endring 2026-05-11 10
+- **Files changed:** Bachelor/Core/Src/hall_state_filter.c, Bachelor/Core/Src/motor_commutation.c, Bachelor/pins.md, Bachelor/log.md
+- **What/Why:** Reverterte M1 hall-mapping til tidligere `U=PC7, V=PC1, W=PC9` siden bytte til `PC9/PC1/PC7` ikke forbedret drift. Gjorde deretter en kontrollert M1-only offset-test ved aa bytte forward/reverse sektoroffset for M1 fra `5/2` til `2/5`. M2 er uendret.
+- **Build/Test result:** Ikke kjort. Testes paa hardware.
+### Endring 2026-05-11 11
+- **Files changed:** Bachelor/Core/Src/motor_commutation.c, Bachelor/log.md
+- **What/Why:** Rullet M1 sektoroffset tilbake til den loggede fungerende varianten: M1 forward `5`, M1 reverse `2`. Dette reverserer siste M1-only offset-test (`2/5`) som ikke forbedret hakkingen.
+- **Build/Test result:** Ikke kjort. Testes paa hardware.
+
+## 2026-05-11 12
+- **Prompt:** Motor 1 hakker fremdeles veldig og snurrer ca dobbelt saa sakte som motor 2.
+- **What/Why:** La inn lavfrekvent motorstatusprint i motor_commutation.c, styrt av MOTOR_COMMUTATION_ENABLE_STATUS_PRINTS. Printen viser M1/M2 req, cmd, retning, duty, rpm, siste hallkode og hall-alder samtidig hvert 500 ms naar motorstyringen er enablet. Selve kommutering, offset og duty-regulering ble ikke endret i denne runden.
+- **Build/Test result:** Ikke kjort her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 13
+- **Prompt:** Brukeren sendte MSTAT-logg der duty/rpm var blanke og M1 virket forsinket.
+- **What/Why:** Tolket loggen: M1 hall-age er stort sett lav og tilsvarende M2, saa det peker ikke paa tydelig software-forsinkelse. Endret MSTAT-print fra float-format til heltallsbasert x10-print for duty/rpm, siden printf-oppsettet ikke skriver %%f korrekt. La ogsaa inn guard mot unsigned age-wrap naar hall-tick oppdateres rundt statusprint.
+- **Build/Test result:** Ikke kjort her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 14
+- **Prompt:** Brukeren har byttet kaputt M1-driver og ba om gjennomgang for aa se om M1-testkode henger igjen.
+- **What/Why:** Gjennomgikk motor_commutation, hall-filter, app-task og PWM-testkall. Aktiv statusdebug fra forrige M1-feilsoeking (MOTOR_COMMUTATION_ENABLE_STATUS_PRINTS) ble slaatt av. Hall-modus er aktiv, begge motorer er enablet, hall-runtime-print og raw hall-debug er av. M1-sweepkode og PWM hardwaretest-funksjoner finnes fortsatt i kodebasen, men er ikke aktivt valgt/kalt.
+- **Build/Test result:** Ikke kjort her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 15
+- **Prompt:** Brukeren bekreftet test av like M1/M2 duty-verdier etter gjennomgang av defines.
+- **What/Why:** Fjernet M2-spesifikk boost for ren sammenligning: MOTOR_COMMUTATION_MOTOR2_START_DUTY_PERCENT satt fra 20.0 til 15.0, og MOTOR_COMMUTATION_MOTOR2_DUTY_BIAS_PERCENT satt fra 5.3 til 0.0. Kommutering, sektoroffset, hallfilter og M1-verdier er ikke endret.
+- **Build/Test result:** Ikke kjort her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 16
+- **Prompt:** Brukeren mente M1-problemet kjennes likt som tidligere forsinkelsesproblem i kommuteringen.
+- **What/Why:** Gjennomgikk hall-filterets timing. Selv med HALL_FILTER_STABLE_COUNT=1 ventet polling-stien en ekstra motorControl-runde foer ny hallkode ble akseptert, fordi foerste lesing bare satte candidate og returnerte. Endret HallStateFilter_ProcessMotor slik at ny hallkode aksepteres umiddelbart naar HALL_FILTER_STABLE_COUNT <= 1. Dette reduserer kommuteringsforsinkelse i polling-stien uten aa endre sektoroffset eller duty.
+- **Build/Test result:** Ikke kjort her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 17
+- **Prompt:** Brukeren presiserte at motoren ikke starter av seg selv fra start, og at dette ogsaa er et problem.
+- **What/Why:** La inn egen M1 forward start-duty for aa teste startmoment isolert: MOTOR_COMMUTATION_MOTOR1_FORWARD_START_DUTY_PERCENT=20.0. MotorCommutation_GetStartDutyPercent bruker naa denne kun for M1 forward. M2 start-duty, duty-bias, sektoroffset og hall-filter ble ikke endret.
+- **Build/Test result:** Ikke kjort her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 18
+- **Prompt:** Brukeren mistenkte at M1 hall/magnet/fase ikke er aligned, altsaa CH321/CH123-logikken, siden hoyere start-duty ikke hjalp.
+- **What/Why:** Satt M1 forward start-duty tilbake til 15.0 fordi hoyere start-duty ikke hjalp. Endret hall-fasemapping fra felles CH123 til per-motor mapping: M1 bruker naa CH321 (U->CH3, V->CH2, W->CH1), M2 beholdes paa CH123. Init-print viser begge mappingene. Sektoroffset, hall-rekkefolge og duty-regulator er ellers uendret.
+- **Build/Test result:** Ikke kjort her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 19
+- **Prompt:** Brukeren rapporterte at CH321-testen fungerte daarligere og spurte hva deadman/enum-delen av motor_commutation.c betyr.
+- **What/Why:** Rullet M1 hall-fasemapping tilbake fra CH321 til CH123 fordi testen ble verre. Deadman- og enum-koden ble ikke funksjonelt endret.
+- **Build/Test result:** Ikke kjort her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 20
+- **Prompt:** Brukeren ville gaa tilbake til dodmannsknappen, ha print naar den er aktiv, og vise kun motor 2-hastighet paa displayet.
+- **What/Why:** Aktiverte deadman-logikken igjen med PB3 aktiv-lav og intern pullup, som matcher knapp til jord. Eksisterende print ved aktiv deadman beholdes/aktiveres (Deadman active: motors enabled) og release-print stopper/bremser motorene. Satt MOTOR_COMMUTATION_ENABLE_MOTOR2 tilbake til 1 fordi den sto av. Endret LCD-kilden til MotorCommutation_GetMotor2SpeedKmh() og LCD-linje 1 til aa vise M2-prefiks.
+- **Build/Test result:** Ikke kjort her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 21
+- **Prompt:** Brukeren rapporterte at dødmannsknapp-logikken var motsatt og at motorene kun skal være på når knappen holdes inne.
+- **What/Why:** Inverterte deadman-inngangen tilbake til aktiv-høy: MOTOR_COMMUTATION_DEADMAN_ACTIVE_STATE=GPIO_PIN_SET og PB3 konfigureres med GPIO_PULLDOWN. Oppstartsprinten er oppdatert til 'PB3 active high, pulldown'.
+- **Build/Test result:** Ikke kjørt her; make og arm-none-eabi-gcc er ikke tilgjengelig i PATH.
+
+## 2026-05-11 22
+- **Prompt:** Brukeren hadde lagt inn PB3 i IOC med intern pullup og ville sjekke at deadman-oppsettet naa er riktig.
+- **What/Why:** Verifiserte at generert gpio.c setter Deadman_switch_Pin/PB3 sammen med PB12 som GPIO_MODE_INPUT med GPIO_PULLUP. Runtime-konfigen i motor_commutation.c overstyrte fortsatt PB3 til pulldown/aktiv hoy, saa den ble endret til aktiv-lav: MOTOR_COMMUTATION_DEADMAN_ACTIVE_STATE=GPIO_PIN_RESET, GPIO_PULLUP og oppstartsprint 'PB3 active low, pullup'. Dette matcher knapp som holder PB3 til jord naar den trykkes.
+- **Build/Test result:** Ikke kjort her; make er ikke tilgjengelig i PATH.

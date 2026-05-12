@@ -5,15 +5,16 @@
 #include "pwm_control.h"
 
 #define MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT   15.0f
-#define MOTOR_COMMUTATION_MOTOR2_START_DUTY_PERCENT 20.0f
-#define MOTOR_COMMUTATION_MOTOR2_DUTY_BIAS_PERCENT 5.3f
+#define MOTOR_COMMUTATION_MOTOR1_FORWARD_START_DUTY_PERCENT 15.0f
+#define MOTOR_COMMUTATION_MOTOR2_START_DUTY_PERCENT 15.0f
+#define MOTOR_COMMUTATION_MOTOR2_DUTY_BIAS_PERCENT 0.0f
 #define MOTOR_COMMUTATION_MOTOR1_REVERSE_START_DUTY_PERCENT 16.0f
 #define MOTOR_COMMUTATION_MOTOR1_REVERSE_RPM_SLEW_STEP_PERCENT 1.0f
 #define MOTOR_COMMUTATION_REFERENCE_RPM          220.0f
 #define MOTOR_COMMUTATION_REFERENCE_SPEED_KMH    7.0f
 #define MOTOR_COMMUTATION_TARGET_SPEED_KMH       7.0f
 #define MOTOR_COMMUTATION_REFERENCE_DUTY_PERCENT 60.0f
-#define MOTOR_COMMUTATION_MAX_DUTY_PERCENT       90.0f
+#define MOTOR_COMMUTATION_MAX_DUTY_PERCENT       60.0f
 #define MOTOR_COMMUTATION_TARGET_RPM             ((MOTOR_COMMUTATION_TARGET_SPEED_KMH * MOTOR_COMMUTATION_REFERENCE_RPM) / MOTOR_COMMUTATION_REFERENCE_SPEED_KMH)
 #define MOTOR_COMMUTATION_TARGET_DUTY_PERCENT    (MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT + ((MOTOR_COMMUTATION_TARGET_RPM / MOTOR_COMMUTATION_REFERENCE_RPM) * (MOTOR_COMMUTATION_REFERENCE_DUTY_PERCENT - MOTOR_COMMUTATION_DEFAULT_DUTY_PERCENT)))
 #define MOTOR_COMMUTATION_RPM_TRANSITIONS_PER_REV 90.0f
@@ -37,6 +38,8 @@
 #define MOTOR_COMMUTATION_SWEEP_START_STEP       1U
 #define MOTOR_COMMUTATION_SWEEP_FIXED_DUTY       5.0f
 #define MOTOR_COMMUTATION_ENABLE_RUNTIME_PRINTS  0U
+#define MOTOR_COMMUTATION_ENABLE_STATUS_PRINTS   0U
+#define MOTOR_COMMUTATION_STATUS_PRINT_INTERVAL_MS 500U
 #define MOTOR_COMMUTATION_ENABLE_MOTOR1          1U
 #define MOTOR_COMMUTATION_ENABLE_MOTOR2          1U
 #define MOTOR_COMMUTATION_BUTTON_PIN             GPIO_PIN_12
@@ -45,6 +48,13 @@
 #define MOTOR_COMMUTATION_BUTTON_DEBOUNCE_MS     30U
 #define MOTOR_COMMUTATION_BUTTON_STARTUP_IGNORE_MS 500U
 #define MOTOR_COMMUTATION_ENABLE_PB12_BUTTON     0U
+#define MOTOR_COMMUTATION_ENABLE_DEADMAN_SWITCH  1U
+#define MOTOR_COMMUTATION_DEADMAN_PIN            GPIO_PIN_3
+#define MOTOR_COMMUTATION_DEADMAN_PORT           GPIOB
+#define MOTOR_COMMUTATION_DEADMAN_ACTIVE_STATE   GPIO_PIN_RESET
+#define MOTOR_COMMUTATION_DEADMAN_DEBOUNCE_MS    20U
+#define MOTOR_COMMUTATION_DEADMAN_BRAKE_ON_RELEASE 1U
+#define MOTOR_COMMUTATION_DEADMAN_BRAKE_DUTY_PERCENT 0.0f
 typedef enum {
     MOTOR_COMMUTATION_MOTOR_1 = 0,
     MOTOR_COMMUTATION_MOTOR_2 = 1,
@@ -139,12 +149,9 @@ static const MotorCommutation_SweepVariant kMotorCommutationSweepVariants[] = {
     {"CH321 REV", TIM_CHANNEL_3, TIM_CHANNEL_2, TIM_CHANNEL_1, -1}
 };
 
-static const MotorCommutation_SweepVariant kMotorCommutationHallVariant = {
-    "CH123",
-    TIM_CHANNEL_1,
-    TIM_CHANNEL_2,
-    TIM_CHANNEL_3,
-    1
+static const MotorCommutation_SweepVariant kMotorCommutationHallVariants[MOTOR_COMMUTATION_MOTOR_COUNT] = {
+    {"M1 CH123", TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, 1},
+    {"M2 CH123", TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, 1}
 };
 
 static MotorCommutation_Runtime s_motorRuntime[MOTOR_COMMUTATION_MOTOR_COUNT];
@@ -154,12 +161,19 @@ static GPIO_PinState s_motorButtonStableState = GPIO_PIN_SET;
 static GPIO_PinState s_motorButtonLastRawState = GPIO_PIN_SET;
 static uint32_t s_motorButtonLastChangeTickMs = 0U;
 static uint32_t s_motorButtonIgnoreUntilTickMs = 0U;
+static uint8_t s_motorDeadmanActive = 0U;
+static GPIO_PinState s_motorDeadmanLastRawState = GPIO_PIN_RESET;
+static uint32_t s_motorDeadmanLastChangeTickMs = 0U;
+#if MOTOR_COMMUTATION_ENABLE_STATUS_PRINTS
+static uint32_t s_motorStatusLastPrintTickMs = 0U;
+#endif
 
 static void MotorCommutation_ApplyPatternWithVariant(MotorCommutation_MotorIndex motor_index,
                                                      const MotorCommutation_PhasePattern *pattern,
                                                      const MotorCommutation_SweepVariant *variant,
                                                      const char *source,
                                                      uint8_t source_index);
+static void MotorCommutation_SetEnabled(uint8_t enabled);
 static void MotorCommutation_ProcessMotor(MotorCommutation_MotorIndex motor_index, uint32_t now);
 static uint8_t MotorCommutation_TryGetMotorIndexFromHallIndex(HallStateFilter_MotorIndex hall_index,
                                                               MotorCommutation_MotorIndex *motor_index);
@@ -167,6 +181,10 @@ static float MotorCommutation_GetStartDutyPercent(MotorCommutation_MotorIndex mo
 static float MotorCommutation_GetDutyBiasPercent(MotorCommutation_MotorIndex motor_index, uint8_t command_forward);
 static float MotorCommutation_GetRpmDutySlewStepPercent(MotorCommutation_MotorIndex motor_index, uint8_t command_forward);
 static uint8_t MotorCommutation_GetSectorOffset(MotorCommutation_MotorIndex motor_index, uint8_t command_forward);
+#if MOTOR_COMMUTATION_ENABLE_STATUS_PRINTS
+static void MotorCommutation_PrintStatus(uint32_t now);
+static int32_t MotorCommutation_FloatToX10(float value);
+#endif
 
 static int16_t MotorCommutation_ClampCommand(int16_t command)
 {
@@ -240,6 +258,108 @@ static void MotorCommutation_DisableAllOutputs(void)
     }
 }
 
+static void MotorCommutation_BrakeMotorOutputs(MotorCommutation_MotorIndex motor_index)
+{
+    const MotorCommutation_MotorConfig *motor = &kMotorCommutationMotorConfig[motor_index];
+
+    motor->set_phase_state(TIM_CHANNEL_1,
+                           PWM_PHASE_STATE_LOW,
+                           MOTOR_COMMUTATION_DEADMAN_BRAKE_DUTY_PERCENT);
+    motor->set_phase_state(TIM_CHANNEL_2,
+                           PWM_PHASE_STATE_LOW,
+                           MOTOR_COMMUTATION_DEADMAN_BRAKE_DUTY_PERCENT);
+    motor->set_phase_state(TIM_CHANNEL_3,
+                           PWM_PHASE_STATE_LOW,
+                           MOTOR_COMMUTATION_DEADMAN_BRAKE_DUTY_PERCENT);
+}
+
+static void MotorCommutation_BrakeAllOutputs(void)
+{
+    uint32_t i;
+
+    for (i = 0U; i < MOTOR_COMMUTATION_MOTOR_COUNT; ++i) {
+        MotorCommutation_BrakeMotorOutputs((MotorCommutation_MotorIndex)i);
+    }
+}
+
+static void MotorCommutation_ResetAllRuntimeForStop(void)
+{
+    uint32_t i;
+
+    for (i = 0U; i < MOTOR_COMMUTATION_MOTOR_COUNT; ++i) {
+        s_motorRuntime[i].requested_percent = 0;
+        s_motorRuntime[i].command_percent = 0;
+        s_motorRuntime[i].command_enabled = 0U;
+        s_motorRuntime[i].target_rpm = 0.0f;
+        s_motorRuntime[i].duty_percent = 0.0f;
+        s_motorRuntime[i].measured_rpm = 0.0f;
+        s_motorRuntime[i].has_transition_time = 0U;
+        s_motorRuntime[i].last_transition_cycles = 0U;
+        s_motorRuntime[i].last_transition_sequence = 0U;
+        s_motorRuntime[i].last_hall_tick_ms = 0U;
+    }
+}
+
+#if MOTOR_COMMUTATION_ENABLE_DEADMAN_SWITCH
+static void MotorCommutation_ConfigureDeadmanSwitchInput(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+
+    GPIO_InitStruct.Pin = MOTOR_COMMUTATION_DEADMAN_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(MOTOR_COMMUTATION_DEADMAN_PORT, &GPIO_InitStruct);
+}
+
+static void MotorCommutation_StopForDeadmanRelease(void)
+{
+    s_motorCommutationToggleRequested = 0U;
+    s_motorCommutationEnabled = 0U;
+    MotorCommutation_ResetAllRuntimeForStop();
+
+#if MOTOR_COMMUTATION_DEADMAN_BRAKE_ON_RELEASE
+    MotorCommutation_BrakeAllOutputs();
+#else
+    MotorCommutation_DisableAllOutputs();
+#endif
+}
+
+static uint8_t MotorCommutation_ProcessDeadmanSwitch(uint32_t now)
+{
+    const GPIO_PinState raw_state =
+        HAL_GPIO_ReadPin(MOTOR_COMMUTATION_DEADMAN_PORT, MOTOR_COMMUTATION_DEADMAN_PIN);
+
+    if (raw_state != s_motorDeadmanLastRawState) {
+        s_motorDeadmanLastRawState = raw_state;
+        s_motorDeadmanLastChangeTickMs = now;
+    }
+
+    if (raw_state != MOTOR_COMMUTATION_DEADMAN_ACTIVE_STATE) {
+        if ((s_motorDeadmanActive != 0U) || (s_motorCommutationEnabled != 0U)) {
+            MyPrint_Print("Deadman released: motors stopped/braking\r\n");
+            MotorCommutation_StopForDeadmanRelease();
+        }
+        s_motorDeadmanActive = 0U;
+        return 0U;
+    }
+
+    if ((now - s_motorDeadmanLastChangeTickMs) < MOTOR_COMMUTATION_DEADMAN_DEBOUNCE_MS) {
+        return s_motorDeadmanActive;
+    }
+
+    if (s_motorDeadmanActive == 0U) {
+        s_motorDeadmanActive = 1U;
+        MotorCommutation_SetEnabled(1U);
+        MyPrint_Print("Deadman active: motors enabled\r\n");
+    }
+
+    return 1U;
+}
+#endif
+
 static uint8_t MotorCommutation_TryGetMotorIndexFromHallIndex(HallStateFilter_MotorIndex hall_index,
                                                               MotorCommutation_MotorIndex *motor_index)
 {
@@ -305,6 +425,7 @@ static void MotorCommutation_ApplyAppliedCommand(MotorCommutation_MotorIndex mot
         runtime->command_forward = 1U;
         runtime->duty_percent = 0.0f;
         runtime->measured_rpm = 0.0f;
+        runtime->has_state = 0U;
         runtime->has_transition_time = 0U;
         runtime->last_transition_cycles = 0U;
         runtime->last_transition_sequence = 0U;
@@ -316,6 +437,7 @@ static void MotorCommutation_ApplyAppliedCommand(MotorCommutation_MotorIndex mot
     if (runtime->command_enabled == 0U) {
         runtime->duty_percent = MotorCommutation_GetStartDutyPercent(motor_index, command_forward);
         runtime->measured_rpm = 0.0f;
+        runtime->has_state = 0U;
         runtime->has_transition_time = 0U;
         runtime->last_transition_cycles = 0U;
         runtime->last_transition_sequence = 0U;
@@ -420,6 +542,10 @@ static float MotorCommutation_GetStartDutyPercent(MotorCommutation_MotorIndex mo
         return MOTOR_COMMUTATION_MOTOR2_START_DUTY_PERCENT;
     }
 
+    if ((motor_index == MOTOR_COMMUTATION_MOTOR_1) && (command_forward != 0U)) {
+        return MOTOR_COMMUTATION_MOTOR1_FORWARD_START_DUTY_PERCENT;
+    }
+
     if ((motor_index == MOTOR_COMMUTATION_MOTOR_1) && (command_forward == 0U)) {
         return MOTOR_COMMUTATION_MOTOR1_REVERSE_START_DUTY_PERCENT;
     }
@@ -498,6 +624,66 @@ static uint8_t MotorCommutation_GetCommandSector(MotorCommutation_MotorIndex mot
     return (uint8_t)(((hall_sector - 1U + offset) % 6U) + 1U);
 }
 
+#if MOTOR_COMMUTATION_ENABLE_STATUS_PRINTS
+static int32_t MotorCommutation_FloatToX10(float value)
+{
+    if (value >= 0.0f) {
+        return (int32_t)((value * 10.0f) + 0.5f);
+    }
+
+    return (int32_t)((value * 10.0f) - 0.5f);
+}
+
+static void MotorCommutation_PrintStatus(uint32_t now)
+{
+    const MotorCommutation_Runtime *m1 = &s_motorRuntime[MOTOR_COMMUTATION_MOTOR_1];
+    const MotorCommutation_Runtime *m2 = &s_motorRuntime[MOTOR_COMMUTATION_MOTOR_2];
+    uint32_t m1_hall_age_ms = 0U;
+    uint32_t m2_hall_age_ms = 0U;
+    const int32_t m1_duty_x10 = MotorCommutation_FloatToX10(m1->duty_percent);
+    const int32_t m2_duty_x10 = MotorCommutation_FloatToX10(m2->duty_percent);
+    const int32_t m1_rpm_x10 = MotorCommutation_FloatToX10(m1->measured_rpm);
+    const int32_t m2_rpm_x10 = MotorCommutation_FloatToX10(m2->measured_rpm);
+
+    if (s_motorCommutationEnabled == 0U) {
+        return;
+    }
+
+    if ((now - s_motorStatusLastPrintTickMs) < MOTOR_COMMUTATION_STATUS_PRINT_INTERVAL_MS) {
+        return;
+    }
+    s_motorStatusLastPrintTickMs = now;
+
+    if ((m1->last_hall_tick_ms != 0U) && (now >= m1->last_hall_tick_ms)) {
+        m1_hall_age_ms = now - m1->last_hall_tick_ms;
+    }
+    if ((m2->last_hall_tick_ms != 0U) && (now >= m2->last_hall_tick_ms)) {
+        m2_hall_age_ms = now - m2->last_hall_tick_ms;
+    }
+
+    MyPrint_Printf("MSTAT M1 req=%d cmd=%d %s duty=%ld.%ld rpm=%ld.%ld hall=0x%X age=%lu | "
+                   "M2 req=%d cmd=%d %s duty=%ld.%ld rpm=%ld.%ld hall=0x%X age=%lu\r\n",
+                   (int)m1->requested_percent,
+                   (int)m1->command_percent,
+                   m1->command_enabled ? (m1->command_forward ? "FWD" : "REV") : "OFF",
+                   (long)(m1_duty_x10 / 10),
+                   (long)(m1_duty_x10 % 10),
+                   (long)(m1_rpm_x10 / 10),
+                   (long)(m1_rpm_x10 % 10),
+                   (unsigned)m1->last_hall_code,
+                   (unsigned long)m1_hall_age_ms,
+                   (int)m2->requested_percent,
+                   (int)m2->command_percent,
+                   m2->command_enabled ? (m2->command_forward ? "FWD" : "REV") : "OFF",
+                   (long)(m2_duty_x10 / 10),
+                   (long)(m2_duty_x10 % 10),
+                   (long)(m2_rpm_x10 / 10),
+                   (long)(m2_rpm_x10 % 10),
+                   (unsigned)m2->last_hall_code,
+                   (unsigned long)m2_hall_age_ms);
+}
+#endif
+
 static void MotorCommutation_ApplyPattern(MotorCommutation_MotorIndex motor_index,
                                           const MotorCommutation_PhasePattern *pattern,
                                           const char *source,
@@ -505,7 +691,7 @@ static void MotorCommutation_ApplyPattern(MotorCommutation_MotorIndex motor_inde
 {
     MotorCommutation_ApplyPatternWithVariant(motor_index,
                                              pattern,
-                                             &kMotorCommutationHallVariant,
+                                             &kMotorCommutationHallVariants[motor_index],
                                              source,
                                              source_index);
 }
@@ -722,6 +908,14 @@ static void MotorCommutation_ProcessMotor(MotorCommutation_MotorIndex motor_inde
         return;
     }
 
+    if (runtime->has_state == 0U) {
+        runtime->last_hall_code = state.hall_code;
+        runtime->has_state = 1U;
+        runtime->last_hall_tick_ms = now;
+        command_sector = MotorCommutation_GetCommandSector(motor_index, state.sector);
+        MotorCommutation_ApplySector(motor_index, command_sector);
+    }
+
     duty_changed = MotorCommutation_ProcessRpmControl(motor_index, now);
 
     if ((runtime->has_state != 0U) &&
@@ -782,6 +976,10 @@ void MotorCommutation_Init(void)
 {
     uint32_t i;
 
+#if MOTOR_COMMUTATION_ENABLE_DEADMAN_SWITCH
+    MotorCommutation_ConfigureDeadmanSwitchInput();
+#endif
+
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
     DWT->CYCCNT = 0U;
@@ -800,10 +998,15 @@ void MotorCommutation_Init(void)
     s_motorButtonLastRawState = s_motorButtonStableState;
     s_motorButtonLastChangeTickMs = HAL_GetTick();
     s_motorButtonIgnoreUntilTickMs = s_motorButtonLastChangeTickMs + MOTOR_COMMUTATION_BUTTON_STARTUP_IGNORE_MS;
+    s_motorDeadmanActive = 0U;
+    s_motorDeadmanLastRawState =
+        HAL_GPIO_ReadPin(MOTOR_COMMUTATION_DEADMAN_PORT, MOTOR_COMMUTATION_DEADMAN_PIN);
+    s_motorDeadmanLastChangeTickMs = HAL_GetTick();
 
-    MyPrint_Printf("Motor commutation ready: mode=%u cfg=%s off=%u/%u/%u/%u inv=%u dir=%u/%u speed max=%u kmh duty max=%u\r\n",
+    MyPrint_Printf("Motor commutation ready: mode=%u cfg=%s/%s off=%u/%u/%u/%u inv=%u dir=%u/%u speed max=%u kmh duty max=%u\r\n",
                    (unsigned)MOTOR_COMMUTATION_MODE,
-                   kMotorCommutationHallVariant.name,
+                   kMotorCommutationHallVariants[MOTOR_COMMUTATION_MOTOR_1].name,
+                   kMotorCommutationHallVariants[MOTOR_COMMUTATION_MOTOR_2].name,
                    (unsigned)MOTOR_COMMUTATION_MOTOR1_FORWARD_SECTOR_OFFSET,
                    (unsigned)MOTOR_COMMUTATION_MOTOR1_REVERSE_SECTOR_OFFSET,
                    (unsigned)MOTOR_COMMUTATION_MOTOR2_FORWARD_SECTOR_OFFSET,
@@ -814,16 +1017,27 @@ void MotorCommutation_Init(void)
                    (unsigned)MOTOR_COMMUTATION_TARGET_SPEED_KMH,
                    (unsigned)MOTOR_COMMUTATION_MAX_DUTY_PERCENT);
     MyPrint_Print("Motor commutation pins: M1=PC7/PC1/PC9 M2=PC2/PC3/PC8\r\n");
+#if MOTOR_COMMUTATION_ENABLE_DEADMAN_SWITCH
+    MyPrint_Print("Deadman switch: PB3 active low, pullup, brake on release\r\n");
+#endif
 }
 
 void MotorCommutation_Process(void)
 {
     const uint32_t now = HAL_GetTick();
 
+#if MOTOR_COMMUTATION_ENABLE_DEADMAN_SWITCH
+    if (MotorCommutation_ProcessDeadmanSwitch(now) == 0U) {
+        return;
+    }
+
+    s_motorCommutationToggleRequested = 0U;
+#else
     if (s_motorCommutationToggleRequested != 0U) {
         s_motorCommutationToggleRequested = 0U;
         MotorCommutation_SetEnabled((uint8_t)(s_motorCommutationEnabled == 0U));
     }
+#endif
 
 #if MOTOR_COMMUTATION_ENABLE_PB12_BUTTON
     MotorCommutation_ProcessButton(now);
@@ -842,6 +1056,10 @@ void MotorCommutation_Process(void)
 
     MotorCommutation_ProcessMotor(MOTOR_COMMUTATION_MOTOR_1, now);
     MotorCommutation_ProcessMotor(MOTOR_COMMUTATION_MOTOR_2, now);
+
+#if MOTOR_COMMUTATION_ENABLE_STATUS_PRINTS
+    MotorCommutation_PrintStatus(now);
+#endif
 }
 
 void MotorCommutation_SetDuty(float duty_percent)
@@ -876,7 +1094,19 @@ void MotorCommutation_SetWheelCommands(int16_t motor1_percent, int16_t motor2_pe
 
 void MotorCommutation_ToggleEnabled(void)
 {
+#if MOTOR_COMMUTATION_ENABLE_DEADMAN_SWITCH
+    s_motorCommutationToggleRequested = 0U;
+#else
     s_motorCommutationToggleRequested = 1U;
+#endif
+}
+
+void MotorCommutation_ForceStop(void)
+{
+    s_motorCommutationToggleRequested = 0U;
+    s_motorCommutationEnabled = 0U;
+    MotorCommutation_ResetAllRuntimeForStop();
+    MotorCommutation_DisableAllOutputs();
 }
 
 float MotorCommutation_GetMotor1SpeedKmh(void)
